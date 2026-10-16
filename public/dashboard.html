@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0a0d18">
+  <title>Brick Breaker Ball | مركز المشتريات</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="orb orb-one"></div><div class="orb orb-two"></div>
+  <section id="loginView" class="login-screen hidden" aria-label="تسجيل الدخول">
+    <div class="login-card">
+      <div class="brand-icon big"><span>◆</span></div>
+      <div class="eyebrow">BRICK BREAKER BALL · CONTROL CENTER</div>
+      <h1>كل مشتريات لعبتك، في مكان واحد.</h1>
+      <p>لوحة خاصة لاستقبال إشعارات Google Play والتحقق من العمليات. ما تعرض تفاصيل أي عملية بدون تسجيل دخول.</p>
+      <form id="loginForm" autocomplete="off">
+        <label for="adminPassword">كلمة مرور لوحة التحكم</label>
+        <input id="adminPassword" type="password" required minlength="12" placeholder="أدخل كلمة المرور" autocomplete="current-password">
+        <button class="btn primary wide" type="submit">دخول للوحة <span>←</span></button>
+      </form>
+      <div id="loginError" class="error-msg" role="alert"></div>
+      <div class="login-foot">🔒 اتصال آمن · جلسة محمية · بيانات الشراء خاصة</div>
+    </div>
+  </section>
+  <section id="appView" class="shell hidden">
+    <aside class="sidebar">
+      <div class="brand"><div class="brand-icon">◆</div><div><div class="brand-top">FORGEPULSE</div><strong>Brick Breaker Ball</strong><small>مركز تحكم Google Play</small></div></div>
+      <div class="nav-head">القائمة الرئيسية</div>
+      <button class="nav-item active" id="navOverview" type="button"><span class="nav-ico">▦</span><span>نظرة عامة</span><span class="mini-dot"></span></button>
+      <button class="nav-item" id="navEvents" type="button"><span class="nav-ico">⇄</span><span>سجل الإشعارات</span></button>
+      <button class="nav-item" id="navSetup" type="button"><span class="nav-ico">⚙</span><span>حالة الربط</span></button>
+      <div class="sidebar-spacer"></div>
+      <div class="help-card"><span>✦</span><b>معلومة مهمة</b><p>الإشعارات تخبرك بتغيّر حالة المشتريات. لا يتم منح الجواهر تلقائياً بدون ربط هوية اللاعب وآلية التسليم.</p></div>
+      <button class="nav-item logout" id="logoutButton" type="button"><span class="nav-ico">↪</span><span>تسجيل الخروج</span></button>
+    </aside>
+    <main class="content">
+      <header class="topbar"><div><div class="eyebrow">GOOGLE PLAY · LIVE EVENTS</div><h1 id="pageHeading">نظرة عامة <span class="spark">✦</span></h1><p id="pageDesc">مراقبة إشعارات المشتريات والتحقق من حالتها أولاً بأول.</p></div><div class="top-actions"><span class="online" id="onlineStatus"><i></i> جاري الاتصال...</span><button class="btn soft" id="refreshButton" type="button" title="تحديث البيانات">↻ <span>تحديث</span></button></div></header>
+      <div id="errorBar" class="banner-error hidden" role="alert"></div>
+      <section id="overviewPanel">
+        <div class="hero"><div><span class="hero-pill">⚡ LIVE MONITORING</span><h2>مشتريات الجواهر تحت عينك.</h2><p>استقبل إشعارات Google Play، راقب الأخطاء، وميّز بين عملية شراء موثّقة وإشعار غير مؤكَّد.</p><button class="btn light" id="goEvents" type="button">شوف الإشعارات <span>↖</span></button></div><div class="hero-art" aria-hidden="true"><div class="game-gem g1">◆</div><div class="game-gem g2">◆</div><div class="hero-ring"></div><div class="hero-center">◎</div></div></div>
+        <div class="metrics">
+          <article class="metric"><div class="metric-top"><span>كل الإشعارات</span><span class="metric-icon purple">≡</span></div><div class="metric-value" id="mTotal">—</div><div class="metric-sub">المستلمة في قاعدة البيانات</div></article>
+          <article class="metric"><div class="metric-top"><span>إشعارات المنتجات</span><span class="metric-icon blue">◆</span></div><div class="metric-value" id="mProducts">—</div><div class="metric-sub">ليست بالضرورة عمليات ناجحة</div></article>
+          <article class="metric"><div class="metric-top"><span>إشعارات تحقّق منها Google</span><span class="metric-icon green">✓</span></div><div class="metric-value" id="mVerified">—</div><div class="metric-sub">حسب ردّ Google Play API</div></article>
+          <article class="metric"><div class="metric-top"><span>عمليات الإلغاء</span><span class="metric-icon amber">↩</span></div><div class="metric-value" id="mVoided">—</div><div class="metric-sub">إشعارات إبطال أو استرداد</div></article>
+        </div>
+        <div class="section-split"><div><h2>آخر الإشعارات</h2><p>سجل لحظي من Google Play</p></div><button type="button" class="simple-link" id="allEventsButton">عرض الكل ←</button></div>
+        <div class="panel table-wrap"><table><thead><tr><th>نوع الإشعار</th><th>المنتج</th><th>حالة التحقق</th><th>تاريخ الوصول</th><th>تفاصيل</th></tr></thead><tbody id="overviewRows"></tbody></table><div class="table-empty hidden" id="overviewEmpty">ما وصلت إشعارات للحين. عقب ربط Push وإرسال Test notification، بتظهر هني.</div></div>
+      </section>
+      <section id="eventsPanel" class="hidden">
+        <div class="section-split"><div><h2>سجل الإشعارات</h2><p>فلتر حسب نوع الإشعار وحالة التحقق، وافتح أي صف للمزيد.</p></div><div class="filters"><select id="typeFilter" aria-label="نوع الإشعار"><option value="all">كل الأنواع</option><option value="product">مشتريات المنتجات</option><option value="test">اختبار Google</option><option value="voided">إلغاء واسترداد</option><option value="subscription">اشتراكات</option><option value="refund_review">مراجعة استرداد</option></select><select id="statusFilter" aria-label="حالة الإشعار"><option value="all">كل الحالات</option><option value="verified_purchase">شراء مؤكّد</option><option value="not_configured">التحقق غير مهيّأ</option><option value="verification_error">فشل التحقق</option><option value="pending">معلّق</option><option value="canceled">ملغي</option><option value="test">اختبار</option><option value="voided">مستردّ</option><option value="awaiting_verification">بانتظار التحقق</option></select></div></div>
+        <div class="panel table-wrap"><table><thead><tr><th>نوع الإشعار</th><th>المنتج</th><th>الحالة</th><th>الوقت</th><th>تفاصيل</th></tr></thead><tbody id="eventsRows"></tbody></table><div class="table-empty hidden" id="eventsEmpty">ما لقينا إشعارات تطابق الفلتر الحالي.</div><div class="pagination"><span id="pageInfo">—</span><div><button id="prevButton" class="btn soft" type="button">السابق</button><button id="nextButton" class="btn soft" type="button">التالي</button></div></div></div>
+      </section>
+      <section id="setupPanel" class="hidden"><div class="section-split"><div><h2>حالة الربط</h2><p>تُظهر اللوحة ما يمكنها التأكد منه فعلياً فقط.</p></div></div><div class="setup-grid" id="setupCards"></div><div class="notice"><strong>شنو بعد نحتاج حتى توصل الإشعارات؟</strong><p>لازم تنشئ اشتراك Pub/Sub من نوع <b>Push</b>، وتحدد الرابط <code id="webhookUrl">/api/webhook</code>، وتختار Service Account للمصادقة. إذا وصل إشعار اختبار للوحة فهذا دليل أن التوصيل شغّال.</p><p>ربط Google Play Developer API للتحقق من المشتريات خطوة إضافية، وتحتاج Service Account بصلاحيات Google Play Console.</p></div></section>
+      <footer class="footer"><span>Brick Breaker Ball · لوحة إشعارات مشتريات Google Play</span><span>التحديث التلقائي كل 25 ثانية · توقيت جهازك</span></footer>
+    </main>
+  </section>
+  <div id="detailModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modalTitle"><div class="modal-mask" id="modalMask"></div><div class="modal-card"><div class="modal-header"><div><div class="eyebrow">EVENT DETAILS</div><h2 id="modalTitle">تفاصيل الإشعار</h2></div><button id="closeModal" type="button" class="icon-button" aria-label="إغلاق">✕</button></div><div id="modalBody"></div><div class="modal-footer"><span>لا نعرض رموز الشراء السرية.</span><button type="button" class="btn primary" id="recheckButton">↻ إعادة التحقق من Google Play</button></div></div></div>
+  <script src="/app.js" defer></script>
+</body>
+</html>

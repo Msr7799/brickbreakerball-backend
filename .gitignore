@@ -1,0 +1,17 @@
+node_modules/
+.next/
+.vercel/
+.env
+.env.*
+!.env.example
+*.log
+*.pem
+*service-account*.json
+*credentials*.json
+.DS_Store
+
+*.zip
+*.key
+*.p12
+*.pfx
+*.crt

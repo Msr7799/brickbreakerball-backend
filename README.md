@@ -1,3 +1,11 @@
+# ForgePulse MCP + Brick Breaker Ball · Unified Vercel Backend
+
+> **الإصدار 2:** أضفنا لوحة `/mcp-dashboard` بتصميم كريم/زيتوني/فحمي، فحوص اتصال حقيقية وسجل تنفيذ، مع الحفاظ على إشعارات Google Play.
+>
+> ابدأ من: [README_FORGEPULSE_DASHBOARD_AR.md](README_FORGEPULSE_DASHBOARD_AR.md)
+>
+> ملاحظة: أدوات الإدارة الحالية للقراءة فقط حتى تُضاف عمليات كتابة بإجراءات موافقة وصلاحيات مستقلة. لا تعرض الرموز السرية ولا ترفع ملفات `.env.local`.
+
 # Brick Breaker Ball: Unified Vercel backend + ForgePulse Google MCP
 
 A single Next.js 16 project containing:

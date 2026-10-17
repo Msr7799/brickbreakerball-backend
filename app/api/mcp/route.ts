@@ -4,6 +4,8 @@ import {getBearer,tokenMatches,assertEnv,validateDateRange,dateObject,validateRe
 import {firebaseRead} from "../../../src/lib/firebase";
 import {googleGet,googleRequest,googleToken,oauthToken} from "../../../src/lib/google";
 import {writeAudit,toolsMeta} from "../../../src/lib/mcp-control";
+import {getAssistantSettings,allowedTool} from "../../../src/lib/assistant-settings";
+import {searchTavily} from "../../../src/lib/tavily";
 
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
@@ -15,7 +17,7 @@ const playRoot=()=>`https://androidpublisher.googleapis.com/androidpublisher/v3/
 const pubsubRoot=()=>`https://pubsub.googleapis.com/v1/projects/${encodeURIComponent(cloud())}`;
 const result=async(name:string,fn:()=>Promise<unknown>)=>{
  const started=Date.now();
- try{const value=await fn();const data=JSON.stringify(value,null,2);
+ try{const settings=await getAssistantSettings();if(!allowedTool(name,settings))throw new Error("This MCP tool is disabled in ForgePulse controls.");const value=await fn();const data=JSON.stringify(value,null,2);
   await writeAudit({source:"mcp",action:name,service:toolsMeta.find(t=>t.id===name)?.service,success:true,durationMs:Date.now()-started,detail:"Read-only operation completed"});
   return {content:[{type:"text" as const,text:data.length>40000?data.slice(0,40000)+"\n[TRUNCATED]":data}]};}
  catch(e){await writeAudit({source:"mcp",action:name,service:toolsMeta.find(t=>t.id===name)?.service,success:false,durationMs:Date.now()-started,detail:e instanceof Error?e.name:"Unknown error"});
@@ -24,6 +26,7 @@ const result=async(name:string,fn:()=>Promise<unknown>)=>{
 const date=z.string().regex(/^\d{4}-\d{2}-\d{2}$/,"Use YYYY-MM-DD");
 const account=z.string().regex(/^accounts\/pub-\d{10,20}$/);
 const handler=createMcpHandler((server)=>{
+ server.registerTool("tavily_search",{description:"Search the web with Tavily and return source URLs. Read-only; uses Tavily credits.",inputSchema:z.object({query:z.string().min(3).max(500)})},async({query})=>result("tavily_search",()=>searchTavily(query)));
  server.registerTool("gateway_status",{description:"Show which of the five providers have their required settings configured. No secret values are returned.",inputSchema:z.object({})},async()=>result("gateway_status",async()=>({
   readOnly:true,
   firebase:!!(process.env.FIREBASE_DATABASE_URL&&(process.env.FIREBASE_SERVICE_ACCOUNT_JSON||process.env.GOOGLE_SERVICE_ACCOUNT_JSON)),
@@ -31,6 +34,7 @@ const handler=createMcpHandler((server)=>{
   cloud:!!(process.env.GOOGLE_SERVICE_ACCOUNT_JSON&&process.env.GOOGLE_CLOUD_PROJECT_ID),
   admob:!!((process.env.GOOGLE_ADMOB_REFRESH_TOKEN||process.env.GOOGLE_OAUTH_REFRESH_TOKEN)&&process.env.GOOGLE_OAUTH_CLIENT_ID&&process.env.GOOGLE_OAUTH_CLIENT_SECRET),
   adsense:!!((process.env.GOOGLE_ADSENSE_REFRESH_TOKEN||process.env.GOOGLE_OAUTH_REFRESH_TOKEN)&&process.env.GOOGLE_OAUTH_CLIENT_ID&&process.env.GOOGLE_OAUTH_CLIENT_SECRET),
+  tavily:!!process.env.TAVILY_API_KEY,
   note:"Configured does not guarantee Google granted API access. Run account-list tools to verify."
  })));
 
@@ -60,6 +64,7 @@ async function authorized(request:Request):Promise<Response>{
  const configured=process.env.MCP_BEARER_TOKEN;
  if(!configured||configured.length<32||configured.startsWith("REPLACE_"))return Response.json({error:"MCP_BEARER_TOKEN is not configured securely"},{status:503});
  if(!tokenMatches(getBearer(request),configured))return Response.json({error:"Unauthorized"},{status:401,headers:{"WWW-Authenticate":"Bearer"}});
+ try{const settings=await getAssistantSettings();if(!settings.enabled||!settings.mcpEnabled)return Response.json({error:"MCP is disabled in ForgePulse controls"},{status:503});}catch{return Response.json({error:"MCP settings unavailable"},{status:503});}
  try{return await handler(request);}catch{return Response.json({error:"MCP handler failed. Check deployment logs."},{status:500});}
 }
 export const POST=authorized;

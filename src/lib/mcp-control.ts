@@ -3,10 +3,11 @@ import {googleGet,googleRequest,googleToken,oauthToken} from "./google";
 import {firebaseRead,firebaseProbe} from "./firebase";
 import {assertEnv,validateDateRange,dateObject,validateResource} from "./security";
 import {z} from "zod";
+import {searchTavily} from "./tavily";
 import type {Db} from "mongodb";
 
 const {db}=require("../../billing/lib/db.js") as {db:()=>Promise<Db>};
-export type ServiceId="mongodb"|"vercel"|"firebase"|"cloud"|"play"|"admob"|"adsense";
+export type ServiceId="mongodb"|"vercel"|"firebase"|"cloud"|"play"|"admob"|"adsense"|"tavily";
 export type ServiceState="connected"|"pending"|"not_configured"|"error";
 /**
  * توضيح أنواع MongoDB:
@@ -21,8 +22,8 @@ type ConnectionCheck={
  latencyMs:number;
  detail:string;
 };
-export const serviceIds:ServiceId[]=["firebase","cloud","play","admob","adsense","mongodb","vercel"];
-export const serviceLabels:Record<ServiceId,string>={mongodb:"MongoDB",vercel:"Vercel Runtime",firebase:"Firebase",cloud:"Google Cloud",play:"Google Play RTDN",admob:"AdMob",adsense:"AdSense"};
+export const serviceIds:ServiceId[]=["firebase","cloud","play","admob","adsense","tavily","mongodb","vercel"];
+export const serviceLabels:Record<ServiceId,string>={mongodb:"MongoDB",vercel:"Vercel Runtime",firebase:"Firebase",cloud:"Google Cloud",play:"Google Play RTDN",admob:"AdMob",adsense:"AdSense",tavily:"Tavily Search"};
 const packageName=()=>assertEnv("ANDROID_PACKAGE_NAME");
 const cloudId=()=>assertEnv("GOOGLE_CLOUD_PROJECT_ID");
 const playUrl=()=>`https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${encodeURIComponent(packageName())}`;
@@ -32,6 +33,7 @@ export const credentialsReady=(id:ServiceId):boolean=>{
  switch(id){
   case "mongodb":return has("MONGODB_URI")&&has("MONGODB_DB");
   case "vercel":return true;
+  case "tavily":return has("TAVILY_API_KEY");
   case "firebase":return has("FIREBASE_DATABASE_URL")&&has("FIREBASE_SERVICE_ACCOUNT_JSON");
   case "cloud":return has("GOOGLE_CLOUD_PROJECT_ID")&&has("GOOGLE_SERVICE_ACCOUNT_JSON");
   case "play":return has("PUBSUB_PUSH_SERVICE_ACCOUNT")&&has("PUBSUB_AUDIENCE")&&has("GOOGLE_PLAY_PACKAGE_NAME");
@@ -58,6 +60,7 @@ async function probe(id:ServiceId):Promise<string>{
  switch(id){
   case "mongodb":await (await db()).command({ping:1});return "MongoDB responded to ping";
   case "vercel":return "Next.js server route is responding (not a Vercel account API check)";
+  case "tavily":await searchTavily("Brick Breaker Ball game");return "Tavily search API responded";
   case "firebase":{
    const data=await firebaseProbe();return `Realtime Database accessible under ${data.path}; node ${data.exists?"exists":"is empty or absent"}`;
   }
@@ -124,6 +127,7 @@ const d=z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const account=z.string().regex(/^accounts\/pub-\d{10,20}$/);
 const toolSchemas={
  gateway_status:z.object({}),firebase_read:z.object({path:z.string().min(1).max(200).default("/mcp"),maxChildren:z.coerce.number().int().min(1).max(100).default(20)}),
+ tavily_search:z.object({query:z.string().min(3).max(500)}),
  play_list_reviews:z.object({maxResults:z.coerce.number().int().min(1).max(100).default(20)}),
  play_list_one_time_products:z.object({pageSize:z.coerce.number().int().min(1).max(100).default(50)}),
  play_list_subscriptions:z.object({pageSize:z.coerce.number().int().min(1).max(100).default(50)}),
@@ -134,6 +138,7 @@ const toolSchemas={
 } as const;
 export type ToolId=keyof typeof toolSchemas;
 export const toolsMeta:{id:ToolId;service:ServiceId;title:string;description:string;args:{key:string;label:string;hint?:string}[]}[]=[
+ {id:"tavily_search",service:"tavily",title:"بحث Tavily",description:"بحث ويب مباشر مع روابط المصادر",args:[{key:"query",label:"عبارة البحث",hint:"اكتب ما تريد البحث عنه"}]},
  {id:"gateway_status",service:"vercel",title:"حالة بوابة MCP",description:"يعرض التهيئة من غير أي أسرار",args:[]},
  {id:"firebase_read",service:"firebase",title:"قراءة Firebase",description:"قراءة محدودة من المسار المسموح فقط",args:[{key:"path",label:"المسار",hint:"/mcp"},{key:"maxChildren",label:"أقصى عدد",hint:"20"}]},
  {id:"play_list_reviews",service:"play",title:"مراجعات Google Play",description:"استعراض تقييمات اللعبة",args:[]},
@@ -158,6 +163,7 @@ export async function runReadTool(name:string,args:unknown,source:"dashboard"|"m
   let output:unknown;
   switch(name){
    case "gateway_status":output={readOnly:true,services:serviceIds.map(id=>({id,configured:credentialsReady(id)})),note:"Configuration is not proof of successful API connectivity"};break;
+   case "tavily_search":output=await searchTavily(p.query);break;
    case "firebase_read":output=await firebaseRead(p.path,p.maxChildren);break;
    case "play_list_reviews":output=await googleGet(`${playUrl()}/reviews`,await googleToken("play"),{maxResults:p.maxResults});break;
    case "play_list_one_time_products":output=await googleGet(`${playUrl()}/oneTimeProducts`,await googleToken("play"),{pageSize:p.pageSize});break;

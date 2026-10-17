@@ -12,6 +12,7 @@ A single Next.js 16 project containing:
 
 1. Existing Brick Breaker Ball RTDN purchase-event dashboard and secured authenticated Pub/Sub webhook (ported to Next Route Handlers via a small compatibility adapter).
 2. ForgePulse Google MCP Gateway (read-only Google Firebase, Play, Cloud, AdMob, AdSense tools) at `/api/mcp`.
+3. Private ForgePulse AI chat at `/mcp-dashboard/chat` with Gemini, Tavily, PDF/image input, and MCP controls. See [Arabic chat guide](docs/FORGEPULSE_AI_CHAT_AR.md).
 
 **Start with [START_HERE_AR.md](./START_HERE_AR.md)** for step-by-step Arabic instructions.
 
@@ -35,7 +36,9 @@ Requires Node.js 20.9+. `.env.local` should contain your own runtime credentials
 | `/api/session`, `/api/login`, `/api/logout` | Dashboard auth | Cookie session |
 | `/api/events`, `/api/status`, `/api/recheck` | Purchases and event review | Admin session |
 | `/api/webhook` | Google Play RTDN notification ingestion | Google Pub/Sub OIDC token |
-| `/api/mcp` | 15 read-only Google API tools | Long `MCP_BEARER_TOKEN` |
+| `/api/mcp` | 15 read-only Google API tools plus Tavily search | Long `MCP_BEARER_TOKEN` and control toggle |
+| `/mcp-dashboard/chat` | Arabic AI chat and MCP tool controls | Admin session |
+| `/api/assistant` | Chat, history, settings, and connection test | Admin session |
 | `/api/health` | Server is live | Public, no secrets |
 | `/mcp-info` | MCP informational page | Public |
 

@@ -13,7 +13,7 @@ const navItems:{id:Tab;label:string;glyph:string}[]=[
  {id:"checks",label:"التأكيدات",glyph:"✓"},{id:"activity",label:"سجل النشاط",glyph:"▤"},{id:"reports",label:"التقارير",glyph:"▥"},{id:"settings",label:"الإعدادات",glyph:"⚙"}
 ];
 const providerStyle:Record<string,{glyph:string;color:string;short:string}>={
- firebase:{glyph:"🔥",color:"#f7b431",short:"Firebase"},cloud:{glyph:"☁",color:"#4285f4",short:"Cloud"},play:{glyph:"▶",color:"#23a977",short:"Play RTDN"},
+ firebase:{glyph:"🔥",color:"#f7b431",short:"Firebase"},cloud:{glyph:"☁",color:"#4285f4",short:"Cloud"},play:{glyph:"▶",color:"#23a977",short:"Play RTDN"},tavily:{glyph:"⌕",color:"#577e54",short:"Tavily"},
  admob:{glyph:"◕",color:"#fb7466",short:"AdMob"},adsense:{glyph:"◈",color:"#eaac3e",short:"AdSense"},mongodb:{glyph:"❧",color:"#3ca970",short:"MongoDB"},vercel:{glyph:"▲",color:"#202522",short:"Vercel"}
 };
 const tabHeading:Record<Tab,[string,string]>={
@@ -66,6 +66,7 @@ export default function ForgePulseDashboard(){
  if(authed===null)return <div className="fp-login-shell"><div className="fp-login-card"><span className="fp-login-logo">✦</span><h2>ForgePulse MCP</h2><p>جاري التحقق من الجلسة...</p></div></div>;
  if(!authed)return <div className="fp-login-shell"><form className="fp-login-card" onSubmit={login}><span className="fp-login-logo">✦</span><small className="fp-overline">FORGEPULSE · PRIVATE CONTROL</small><h1>إدارة خدماتك، من مكان واحد.</h1><p>استخدم نفس كلمة مرور لوحة مشتريات Brick Breaker Ball. الدخول محمي بجلسة خاصة.</p><label htmlFor="fp-pass">كلمة مرور الإدارة</label><input id="fp-pass" type="password" value={pass} onChange={e=>setPass(e.target.value)} required autoComplete="current-password" minLength={12}/><button className="fp-primary-button" disabled={loginBusy} type="submit">{loginBusy?"جارٍ الدخول...":"دخول لوحة ForgePulse ←"}</button>{error&&<p className="fp-alert" role="alert">{error}</p>}<a href="/dashboard.html" className="fp-login-link">الرجوع إلى لوحة مشتريات الجواهر</a></form></div>;
  return <div className="fp-app" dir="rtl">
+  <a className="fp-chat-shortcut" href="/mcp-dashboard/chat" aria-label="فتح مساعد ForgePulse">✦ <span>مساعد ForgePulse</span></a>
   <aside className="fp-sidebar"><div className="fp-brand"><div className="fp-brand-mark">≋</div><div><strong>ForgePulse</strong><span>MCP Control</span></div></div><span className="fp-sidebar-heading">لوحة التحكم</span>
    <nav aria-label="القائمة الرئيسية">{navItems.map(item=><button key={item.id} className={`fp-nav-item ${tab===item.id?"selected":""}`} onClick={()=>{setTab(item.id);setQuery("");}}><span className="fp-nav-icon">{item.glyph}</span>{item.label}</button>)}</nav>
    <div className="fp-sidebar-bottom"><div className="fp-side-status"><span className="fp-side-sun">☀</span><b>مركز مراقبة فعلي</b><small>الحالة تعتمد على اختبار الاتصال، مو على وجود المفتاح فقط.</small></div><a className="fp-billing-link" href="/dashboard.html">◆ لوحة المشتريات</a><button onClick={logout} className="fp-logout">↪ تسجيل الخروج</button></div>

@@ -17,7 +17,7 @@ A single Next.js 16 project containing:
 
 ## Run
 
-```sh
+```sh copybtn
 pnpm install
 pnpm test
 pnpm build

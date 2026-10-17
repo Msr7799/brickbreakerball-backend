@@ -8,6 +8,19 @@ import type {Db} from "mongodb";
 const {db}=require("../../billing/lib/db.js") as {db:()=>Promise<Db>};
 export type ServiceId="mongodb"|"vercel"|"firebase"|"cloud"|"play"|"admob"|"adsense";
 export type ServiceState="connected"|"pending"|"not_configured"|"error";
+/**
+ * توضيح أنواع MongoDB:
+ * نحن نخزن اسم الخدمة نفسه في _id (نص مثل firebase أو cloud)، مو ObjectId.
+ * تعريف نوع المستند هنا يحمي القراءة والتحديث من التحويلات الخاطئة.
+ */
+type ConnectionCheck={
+ _id:ServiceId;
+ service:ServiceId;
+ status:ServiceState;
+ at:Date;
+ latencyMs:number;
+ detail:string;
+};
 export const serviceIds:ServiceId[]=["firebase","cloud","play","admob","adsense","mongodb","vercel"];
 export const serviceLabels:Record<ServiceId,string>={mongodb:"MongoDB",vercel:"Vercel Runtime",firebase:"Firebase",cloud:"Google Cloud",play:"Google Play RTDN",admob:"AdMob",adsense:"AdSense"};
 const packageName=()=>assertEnv("ANDROID_PACKAGE_NAME");
@@ -86,21 +99,24 @@ export async function checkService(id:ServiceId){
  }
 }
 async function saveCheck(record:{service:ServiceId;status:ServiceState;at:Date;latencyMs:number;detail:string}){
- try{const database=await db();await database.collection("mcp_checks").updateOne({_id:record.service as never},{$set:record},{upsert:true});}
+ try{const database=await db();await database.collection<ConnectionCheck>("mcp_checks").updateOne({_id:record.service},{$set:record},{upsert:true});}
  catch(e){console.warn("Cannot save MCP connection check",e instanceof Error?e.name:"unknown");}
 }
 export async function dashboardOverview(){
  const database=await db();
  const [checks,activity,events,successful,failed]=await Promise.all([
-  database.collection("mcp_checks").find({}).toArray(),latestActivity(80),database.collection("events").countDocuments({}),
+  database.collection<ConnectionCheck>("mcp_checks").find({}).toArray(),latestActivity(80),database.collection("events").countDocuments({}),
   database.collection("mcp_audit").countDocuments({success:true}),database.collection("mcp_audit").countDocuments({success:false})
  ]);
- const map=new Map(checks.map(x=>[x._id as ServiceId,x]));
+ // كل _id نص يمثل ServiceId، لذلك لا نحتاج تحويل ObjectId غير آمن.
+ const map=new Map<ServiceId,ConnectionCheck>(checks.map((check):[ServiceId,ConnectionCheck]=>[check._id,check]));
  const services=serviceIds.map(id=>{
   const latest=map.get(id),ready=credentialsReady(id);
   const last=latest?.at?new Date(latest.at):null;
-  const fresh=last && Date.now()-last.getTime()<30*60*1000;
-  return {id,name:serviceLabels[id],configured:ready,status:!ready?"not_configured":fresh?latest.status:"pending",lastCheckedAt:last?.toISOString()||null,detail:!ready?"Settings incomplete":latest?.detail||"Not checked yet",latencyMs:latest?.latencyMs||null};
+  // لا نستخدم latest قبل التأكد من وجود فحص محفوظ لهذه الخدمة.
+  const fresh=last!==null && Date.now()-last.getTime()<30*60*1000;
+  const status:ServiceState=!ready?"not_configured":fresh && latest?latest.status:"pending";
+  return {id,name:serviceLabels[id],configured:ready,status,lastCheckedAt:last?.toISOString()||null,detail:!ready?"Settings incomplete":latest?.detail||"Not checked yet",latencyMs:latest?.latencyMs??null};
  });
  return {ok:true,services,activity,metrics:{checksPassed:successful,checksFailed:failed,mcpOperations:await database.collection("mcp_audit").countDocuments({source:"mcp"}),eventsReceived:events},tools:toolsMeta};
 }

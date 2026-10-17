@@ -25,5 +25,8 @@ test('UI does not fake connection successes',()=>{
  assert.match(controls,/case "firebase"/);assert.match(controls,/firebaseProbe/);
  assert.match(controls,/case "admob"/);assert.match(controls,/oauthToken\("admob"\)/);
  assert.match(controls,/case "adsense"/);assert.match(controls,/oauthToken\("adsense"\)/);
- assert.match(controls,/fresh\?latest\.status:"pending"/);
+ // فحص النوع الصريح لـ MongoDB يمنع خطأ TS2352.
+ assert.match(controls,/collection<ConnectionCheck>\("mcp_checks"\)/);
+ // فحص وجود latest يمنع خطأ TS18048 بدون تعطيل strict.
+ assert.match(controls,/fresh\s*&&\s*latest\s*\?\s*latest\.status\s*:\s*"pending"/);
 });

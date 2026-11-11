@@ -42,6 +42,12 @@ export function parseAuthorizationInput(params:URLSearchParams):AuthorizationInp
     scope!==OAUTH_SCOPE||resource!==oauthResource())throw new Error("Invalid OAuth request");
  return {clientId,redirectUri,state,challenge,scope,resource};
 }
+/** Require a non-conflicting origin signal; missing/null Origin is permitted only
+ * because the POST additionally requires a same-site cookie + one-time form CSRF. */
+export function consentOriginAllowed(headers:Headers):boolean{
+ const reported=headers.get("origin");
+ return (!reported||reported==="null"||reported===oauthOrigin())&&headers.get("sec-fetch-site")!=="cross-site";
+}
 export function sha256(value:string):string{return createHash("sha256").update(value).digest("hex");}
 export function verifyPkce(challenge:string,verifier:string):boolean{
  if(!/^[A-Za-z0-9._~-]{43,128}$/.test(verifier)||!/^[A-Za-z0-9_-]{43}$/.test(challenge))return false;

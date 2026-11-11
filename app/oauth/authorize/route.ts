@@ -1,6 +1,6 @@
 import {NextRequest} from "next/server";
 import {controlAuthorized} from "../../../src/lib/mcp-auth";
-import {parseAuthorizationInput,oauthEnabled,oauthOrigin} from "../../../src/lib/mcp-oauth-helpers";
+import {parseAuthorizationInput,oauthEnabled,consentOriginAllowed} from "../../../src/lib/mcp-oauth-helpers";
 import {createConsent,renewConsent,completeConsent,verifyChatGptClient,csrfCookie,readCsrfCookie,oauthHeaders,noLeaksEqual} from "../../../src/lib/mcp-oauth";
 
 export const runtime="nodejs";export const dynamic="force-dynamic";
@@ -41,9 +41,7 @@ export async function POST(request:NextRequest):Promise<Response>{
  // Firefox/privacy-protected browsers may omit Origin for same-origin form POSTs.
  // Reject a conflicting Origin or Fetch Metadata, while requiring both a one-time
  // server-issued CSRF form value and its SameSite=Strict HttpOnly cookie.
- const origin=request.headers.get("origin");
- if(origin&&origin!=="null"&&origin!==oauthOrigin())return fail("Invalid origin",403);
- if(request.headers.get("sec-fetch-site")==="cross-site")return fail("Invalid cross-site request",403);
+ if(!consentOriginAllowed(request.headers))return fail("Invalid origin",403);
  if(!controlAuthorized(request))return fail("ForgePulse admin session required",401);
  if(!(request.headers.get("content-type")||"").startsWith("application/x-www-form-urlencoded"))return fail("Invalid content type",415);
  if(Number(request.headers.get("content-length")||0)>2048)return fail("Request too large",413);

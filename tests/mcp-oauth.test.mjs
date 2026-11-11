@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {createHash} from "node:crypto";
-import {OAUTH_SCOPE,oauthOrigin,oauthResource,isChatGptClientId,isChatGptRedirect,validateClientMetadata,parseAuthorizationInput,verifyPkce} from "../src/lib/mcp-oauth-helpers.ts";
+import {OAUTH_SCOPE,oauthOrigin,oauthResource,isChatGptClientId,isChatGptRedirect,validateClientMetadata,parseAuthorizationInput,verifyPkce,consentOriginAllowed,matchExactSecret} from "../src/lib/mcp-oauth-helpers.ts";
 
 const clientId="https://chatgpt.com/oauth/client.json";
 const redirectUri="https://chatgpt.com/connector_platform_oauth_redirect";
@@ -37,4 +37,22 @@ test("PKCE verifier is compared securely and uses SHA256 not plain text",()=>{
  assert.equal(verifyPkce(challenge,"v".repeat(50)),true);
  assert.equal(verifyPkce(challenge,"x".repeat(50)),false);
  assert.equal(verifyPkce(challenge,"short"),false);
+});
+
+
+test("consent handles privacy browsers without Origin but rejects cross-site submissions",()=>{
+ const h=(headers)=>new Headers(headers);
+ assert.equal(consentOriginAllowed(h({})),true);
+ assert.equal(consentOriginAllowed(h({"sec-fetch-site":"same-origin"})),true);
+ assert.equal(consentOriginAllowed(h({origin:"null"})),true);
+ assert.equal(consentOriginAllowed(h({origin:"https://brickbreakerball-backend.vercel.app"})),true);
+ assert.equal(consentOriginAllowed(h({origin:"https://attacker.example"})),false);
+ assert.equal(consentOriginAllowed(h({"sec-fetch-site":"cross-site"})),false);
+ assert.equal(consentOriginAllowed(h({origin:"null","sec-fetch-site":"cross-site"})),false);
+});
+test("CSRF form token must match same-site cookie value exactly",()=>{
+ const token="Z".repeat(43);
+ assert.equal(matchExactSecret(token,token),true);
+ assert.equal(matchExactSecret(token,""),false);
+ assert.equal(matchExactSecret(token,"Y".repeat(43)),false);
 });

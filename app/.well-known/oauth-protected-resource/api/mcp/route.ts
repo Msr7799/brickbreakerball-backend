@@ -1,1 +1,1 @@
-export {GET,OPTIONS,runtime,dynamic} from "../../../route";
+export {GET,OPTIONS,runtime,dynamic} from "../../route";

@@ -16,6 +16,8 @@ A single Next.js 16 project containing:
 
 **Start with [START_HERE_AR.md](./START_HERE_AR.md)** for step-by-step Arabic instructions.
 
+**ChatGPT MCP OAuth 2.1:** [دليل الربط الآمن (CIMD + PKCE)](docs/CHATGPT_MCP_OAUTH_AR.md). OAuth is opt-in (`MCP_OAUTH_ENABLED=true`) and keeps the previous bearer authentication operational.
+
 ## Run
 
 ```sh copybtn

@@ -10,7 +10,10 @@ async function db() {
         database.collection('events').createIndex({messageId:1},{unique:true}),
         database.collection('events').createIndex({receivedAt:-1}),
         database.collection('login_attempts').createIndex({expiresAt:1},{expireAfterSeconds:0}),
-        database.collection('mcp_audit').createIndex({at:-1})
+        database.collection('mcp_audit').createIndex({at:-1}),
+        database.collection('mcp_oauth_consents').createIndex({expiresAt:1},{expireAfterSeconds:0}),
+        database.collection('mcp_oauth_codes').createIndex({expiresAt:1},{expireAfterSeconds:0}),
+        database.collection('mcp_oauth_tokens').createIndex({expiresAt:1},{expireAfterSeconds:0})
       ]);
       return database;
     }).catch(e=>{promise=null;throw e;});

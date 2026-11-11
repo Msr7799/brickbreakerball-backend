@@ -80,7 +80,7 @@ export async function exchangeCode(params:URLSearchParams):Promise<Record<string
 }
 export async function refreshAccess(params:URLSearchParams):Promise<Record<string,unknown>|null>{
  const refresh=params.get("refresh_token"),clientId=params.get("client_id");
- if(!refresh||!clientId||!params.has("resource")||params.get("resource")!==oauthResource())return null;
+ if(!refresh||!clientId||(params.has("resource")&&params.get("resource")!==oauthResource()))return null;
  if(!/^[A-Za-z0-9_-]{43}$/.test(refresh))return null;
  const database=await db();
  const record=await database.collection<OAuthToken>("mcp_oauth_tokens").findOneAndDelete({

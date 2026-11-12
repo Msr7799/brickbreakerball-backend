@@ -42,6 +42,10 @@ async function database(): Promise<Db> {
   }
   return dbConnection;
 }
+/** Read-only probe of the exact database connection used by daily claims. */
+export async function probeDailyRewardDatabase(): Promise<void> {
+  await (await database()).command({ping:1});
+}
 // Conditional single-document MongoDB update: atomic receipt and cumulative reward totals.
 export async function dailyRewardResponse(request: NextRequest, claim: boolean): Promise<Response> {
   if (claim && request.headers.has('content-length') && Number(request.headers.get('content-length')) > MAX_BODY)

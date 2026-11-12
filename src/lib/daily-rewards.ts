@@ -1,8 +1,7 @@
 /** Server-owned daily wallet rewards. Never derive eligibility from an Android clock. */
-import {cert, getApps, initializeApp} from 'firebase-admin/app';
-import {getAuth} from 'firebase-admin/auth';
 import {MongoClient, type Db} from 'mongodb';
 import {NextRequest} from 'next/server';
+import {gameFirebaseAuth} from './game-firebase-auth';
 
 const DAY_MS = 86_400_000;
 // Bahrain uses UTC+03:00 all year and does not observe daylight saving time.
@@ -26,18 +25,11 @@ export function dayReward(day: number): {coins: number; gems: number} {
   }
   return {coins: 120 + day * 30, gems: day < 7 ? 1 : 0};
 }
-function app() {
-  const existing = getApps().find(value => value.name === 'brickbreaker-daily-rewards');
-  if (existing) return existing;
-  const raw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON || process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
-  if (!raw) throw new Error('Missing Firebase service account');
-  const key = JSON.parse(raw);
-  return initializeApp({credential: cert(key)}, 'brickbreaker-daily-rewards');
-}
 async function authorizedUid(request: NextRequest): Promise<string | null> {
   const match = /^Bearer ([A-Za-z0-9_.-]+)$/.exec(request.headers.get('authorization') || '');
   if (!match) return null;
-  try { return (await getAuth(app()).verifyIdToken(match[1], true)).uid; }
+  const auth = gameFirebaseAuth();
+  try { return (await auth.verifyIdToken(match[1], true)).uid; }
   catch { return null; }
 }
 async function database(): Promise<Db> {
@@ -54,9 +46,9 @@ async function database(): Promise<Db> {
 export async function dailyRewardResponse(request: NextRequest, claim: boolean): Promise<Response> {
   if (claim && request.headers.has('content-length') && Number(request.headers.get('content-length')) > MAX_BODY)
     return Response.json({ok:false,error:'invalid_request'}, {status:413});
-  const uid = await authorizedUid(request);
-  if (!uid) return Response.json({ok:false,error:'authentication_required'}, {status:401,headers:{'Cache-Control':'no-store'}});
   try {
+    const uid = await authorizedUid(request);
+    if (!uid) return Response.json({ok:false,error:'authentication_required'}, {status:401,headers:{'Cache-Control':'no-store'}});
     const today = rewardDay(Date.now());
     const col = (await database()).collection(COLLECTION);
     let granted = false;

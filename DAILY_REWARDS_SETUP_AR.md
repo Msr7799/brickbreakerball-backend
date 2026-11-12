@@ -1,6 +1,14 @@
 # إعداد مكافآت Brick Breaker Ball اليومية
 
-بعد دمج هذا التعديل ونشر Vercel، أضف `MONGODB_URI` و`MONGODB_DB` و`FIREBASE_SERVICE_ACCOUNT_JSON` في متغيرات Vercel السرية. يجب أن يخص حساب خدمة Firebase نفس مشروع اللعبة. يمكن استخدام `GOOGLE_SERVICE_ACCOUNT_JSON` إذا كان مفوضاً لنفس مشروع Firebase.
+اللعبة المنشورة تستخدم Play Games في `brickbreakerball-508820`، بينما بيانات Firebase Auth ومكافآت اللاعبين في `brick-breaker-ball-8e4f5`. لا تدمج المشروعين أو تنقل حسابات اللاعبين. يرسل Android رمز Play Games المؤقت إلى `POST /api/auth/play-games`، فيتحقق الخادم من اللاعب عبر Google ثم يصدر Firebase Custom Token من مشروع Firebase. يستخدم Android الرمز لتسجيل الدخول إلى Firebase، وبعدها تستخدم واجهات المكافآت Firebase ID Token المعتاد.
+
+متغيرات Vercel المطلوبة للإنتاج:
+- `PLAY_GAMES_SERVER_CLIENT_ID`: معرّف عميل Game Server من مشروع Play Games `6148685744`.
+- `PLAY_GAMES_SERVER_CLIENT_SECRET`: سر نفس العميل؛ يُحفظ في Vercel فقط.
+- `GAME_FIREBASE_SERVICE_ACCOUNT_JSON`: حساب خدمة مخصص من مشروع Firebase `brick-breaker-ball-8e4f5` بصلاحية قراءة Firebase Authentication. لا تعتمد واجهات المكافآت على `GOOGLE_SERVICE_ACCOUNT_JSON` أو `FIREBASE_SERVICE_ACCOUNT_JSON` لأنهما يخدمان وظائف أخرى وقد يشيران إلى مشروع مختلف.
+- `MONGODB_URI` و`MONGODB_DB`: مخزن المطالبات اليومية.
+
+يجب أن يطابق `playGamesWebClientId` في Android معرّف Game Server نفسه. يحتاج كل من تطبيق الإنتاج ونسخة QA إلى بيانات اعتماد Android المناسبة لاسم الحزمة وبصمة SHA-1 في Play Games Console. لا تضع Client Secret أو ملف حساب الخدمة في تطبيق Android أو GitHub.
 
 شغّل `pnpm test` و`pnpm build` قبل النشر. API:
 - `GET /api/rewards/daily/status`

@@ -13,6 +13,9 @@ test('new console enforces session and same-origin for actions',()=>{
   assert.match(src,/controlAuthorized/);assert.match(src,/controlOriginMatches/);
  }
  for(const p of ['overview','activity'])assert.match(read(`app/api/mcp-control/${p}/route.ts`),/controlAuthorized/);
+ const diagnostics=read('app/api/daily-reward-diagnostics/route.ts');
+ assert.match(diagnostics,/controlAuthorized/);
+ assert.match(diagnostics,/controlOriginMatches/);
 });
 test('original MCP tools and Tavily search remain registered and auditable',()=>{
  const mcp=read('app/api/mcp/route.ts');

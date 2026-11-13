@@ -8,7 +8,7 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "oauth": "node scripts/google-oauth.mjs",
+    "oauth": "node --env-file=.env.local scripts/google-oauth.mjs",
     "test:logic": "node --experimental-strip-types --test tests/*.test.mjs",
     "test:mcp": "node scripts/check-mcp.mjs",
     "check": "pnpm typecheck && pnpm test:logic && node --test billing/tests/*.test.js && node --check public/app.js",

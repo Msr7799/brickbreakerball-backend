@@ -7,7 +7,7 @@ import { URL } from "node:url";
 const mode=process.argv.includes("--admob")?"admob":process.argv.includes("--adsense")?"adsense":"both";
 const id=process.env.GOOGLE_OAUTH_CLIENT_ID;
 const secret=process.env.GOOGLE_OAUTH_CLIENT_SECRET;
-if(!id||!secret){console.error("Set GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET before running npm run oauth");process.exit(1);}
+if(!id||!secret){console.error("Missing GOOGLE_OAUTH_CLIENT_ID or GOOGLE_OAUTH_CLIENT_SECRET. Add both to .env.local, then run pnpm run oauth (the script loads .env.local automatically)");process.exit(1);}
 const port=8765;
 const redirect=`http://127.0.0.1:${port}/callback`;
 const oauth=new OAuth2Client(id,secret,redirect);

@@ -1,5 +1,6 @@
 import {GoogleAuth,OAuth2Client} from "google-auth-library";
 import {assertEnv} from "./security";
+import {safeOAuthFailureMessage} from "./google-oauth-errors";
 
 const serviceScopes={
  firebase:["https://www.googleapis.com/auth/firebase.database","https://www.googleapis.com/auth/userinfo.email"],
@@ -19,12 +20,18 @@ export async function googleToken(service:"play"|"cloud"):Promise<string> {
 }
 export async function oauthToken(service:"admob"|"adsense"):Promise<string> {
  const client=new OAuth2Client(assertEnv("GOOGLE_OAUTH_CLIENT_ID"),assertEnv("GOOGLE_OAUTH_CLIENT_SECRET"));
- const name=service==="admob"?"GOOGLE_ADMOB_REFRESH_TOKEN":"GOOGLE_ADSENSE_REFRESH_TOKEN";
- const refresh=process.env[name]||assertEnv("GOOGLE_OAUTH_REFRESH_TOKEN");
+ const providerTokenKey=service==="admob"?"GOOGLE_ADMOB_REFRESH_TOKEN":"GOOGLE_ADSENSE_REFRESH_TOKEN";
+ const tokenKey=process.env[providerTokenKey]?.trim()?providerTokenKey:"GOOGLE_OAUTH_REFRESH_TOKEN";
+ const refresh=assertEnv(tokenKey);
  client.setCredentials({refresh_token:refresh});
- const access=await client.getAccessToken();
- if(!access.token)throw new Error("Google OAuth refresh token did not produce an access token");
- return access.token;
+ try{
+  const access=await client.getAccessToken();
+  if(!access.token)throw new Error("empty_access_token");
+  return access.token;
+ }catch(error){
+  // Never return Google's raw response: it can include sensitive values.
+  throw new Error(safeOAuthFailureMessage(service,tokenKey,error));
+ }
 }
 
 /** URLs are fixed by code, not supplied by an AI. The token never appears in the URL. */

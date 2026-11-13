@@ -8,11 +8,11 @@
 
 1. من Google Cloud Console، افتح **Google Auth Platform → Audience** لنفس المشروع، وتأكد من وضع التطبيق (Testing / In production). إذا كان External + Testing، توكنات OAuth ذات الصلاحيات غير الأساسية غالباً تنتهي بعد 7 أيام.
 2. تأكد إن **AdMob API** و**AdSense Management API** مفعّلتين وإن حساب Google اللي بتوافق منه عنده صلاحية للوصول للخدمتين.
-3. على جهازك المحلي فقط، افتح المشروع وثبّت الاعتمادات (`npm install`). عرّف المتغيرين `GOOGLE_OAUTH_CLIENT_ID` و`GOOGLE_OAUTH_CLIENT_SECRET` من **نفس OAuth Client** الموجود في Vercel. لا ترسل قيمهم في ChatGPT ولا تحفظهم في GitHub.
-4. في PowerShell شغّل:
+3. على جهازك المحلي فقط، افتح المشروع وثبّت الاعتمادات (`pnpm install`). عرّف المتغيرين `GOOGLE_OAUTH_CLIENT_ID` و`GOOGLE_OAUTH_CLIENT_SECRET` من **نفس OAuth Client** الموجود في Vercel. لا ترسل قيمهم في ChatGPT ولا تحفظهم في GitHub.
+4. في PowerShell أنشئ ملف `.env.local` إن ما كان موجود، وأضف `GOOGLE_OAUTH_CLIENT_ID` و`GOOGLE_OAUTH_CLIENT_SECRET` (لا ترفع الملف إلى GitHub). أمر OAuth يحمّل هالملف مباشرة بواسطة Node.js 20.9+؛ عقبها شغّل:
 
    ```powershell
-   npm run oauth
+   pnpm run oauth
    ```
 
    افتح رابط Google اللي يظهر على جهازك، ووافق على `admob.readonly` و`adsense.readonly`. السكربت يطبع توكن جديد محلياً فقط.
@@ -21,7 +21,7 @@
 
 ### إذا حساب AdMob غير حساب AdSense
 
-شغّل `npm run oauth -- --admob` في حساب AdMob واحفظ الناتج في `GOOGLE_ADMOB_REFRESH_TOKEN`. بعدها شغّل `npm run oauth -- --adsense` في حساب AdSense واحفظ الناتج في `GOOGLE_ADSENSE_REFRESH_TOKEN`. كل واحد يتقدم على التوكن المشترك عند وجوده.
+شغّل `pnpm run oauth -- --admob` في حساب AdMob واحفظ الناتج في `GOOGLE_ADMOB_REFRESH_TOKEN`. بعدها شغّل `pnpm run oauth -- --adsense` في حساب AdSense واحفظ الناتج في `GOOGLE_ADSENSE_REFRESH_TOKEN`. كل واحد يتقدم على التوكن المشترك عند وجوده.
 
 ### أخطاء ثانية
 

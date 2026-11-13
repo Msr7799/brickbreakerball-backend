@@ -24,7 +24,7 @@ export function safeOAuthFailureMessage(provider:AdsProvider,envKey:string,error
   const label=provider==="admob"?"AdMob":"AdSense";
   const code=oauthErrorCode(error);
   if(code==="invalid_grant"){
-    return `Google ${label} OAuth refresh token rejected (invalid_grant). Re-authorize the Google account locally with npm run oauth, replace ${envKey} in Vercel Production, and redeploy. Check whether the OAuth consent screen is still in Testing mode.`;
+    return `Google ${label} OAuth refresh token rejected (invalid_grant). Re-authorize the Google account locally with pnpm run oauth, replace ${envKey} in Vercel Production, and redeploy. Check whether the OAuth consent screen is still in Testing mode.`;
   }
   if(code==="invalid_client"||code==="unauthorized_client"){
     return `Google ${label} OAuth client rejected (${code}). Verify GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET belong to the same OAuth client used to issue ${envKey}.`;

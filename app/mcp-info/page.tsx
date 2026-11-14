@@ -1,4 +1,4 @@
-const services=["Firebase Realtime Database","Google Play Console","Google Cloud & Pub/Sub","Google AdMob","Google AdSense"];
+const services=["Firebase Realtime Database","Firebase Crashlytics","Google Analytics 4","Google Play Console","Google Cloud & Pub/Sub","Google AdMob","Google AdSense"];
 export default function Home(){return <main style={{maxWidth:780,margin:"70px auto",padding:24}}>
  <div style={{color:"#70d9d5",fontWeight:700,letterSpacing:3}}>FORGEPULSE</div>
  <h1>MCP Gateway</h1><p>15 private read-only Google tools with audit logs and connection checks. The endpoint is protected by a secret bearer token.</p>

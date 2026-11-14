@@ -19,7 +19,8 @@ export async function getAssistantSettings():Promise<AssistantSettings>{
  let saved=await collection.findOne({_id:"main"});
  // One-time upgrade only for users who enabled *every* original tool.
  // Respect hand-picked allowlists and never re-enable subsequently disabled tools.
- const isFullLegacy=saved!==null&&saved.schemaVersion===undefined&&saved.toolIds.length===originalToolIds.length&&originalToolIds.every(id=>saved.toolIds.includes(id));
+ const previousIds=saved?.toolIds;
+ const isFullLegacy=!!saved&&saved.schemaVersion===undefined&&previousIds?.length===originalToolIds.length&&originalToolIds.every(id=>previousIds.includes(id));
  if(isFullLegacy){
   await collection.updateOne({_id:"main",schemaVersion:{$exists:false},toolIds:{$size:originalToolIds.length}},{
    $addToSet:{toolIds:{$each:newToolIds}},$set:{schemaVersion:2}

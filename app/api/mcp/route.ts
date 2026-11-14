@@ -40,7 +40,7 @@ const days=z.number().int().min(1).max(90).default(7);
 const version=z.string().max(80).optional();
 const handler=createMcpHandler((server)=>{
  server.registerTool("tavily_search",{description:"Search the web with Tavily and return source URLs. Read-only; uses Tavily credits.",_meta:{securitySchemes:[{type:"oauth2",scopes:["mcp:read"]}]},inputSchema:z.object({query:z.string().min(3).max(500)})},async({query})=>result("tavily_search",()=>searchTavily(query)));
- server.registerTool("gateway_status",{description:"Show which of the five providers have their required settings configured. No secret values are returned.",_meta:{securitySchemes:[{type:"oauth2",scopes:["mcp:read"]}]},inputSchema:z.object({})},async()=>result("gateway_status",async()=>({
+ server.registerTool("gateway_status",{description:"Show configured providers and a bounded live Google Analytics API check. No secret values are returned.",_meta:{securitySchemes:[{type:"oauth2",scopes:["mcp:read"]}]},inputSchema:z.object({})},async()=>result("gateway_status",async()=>({
   readOnly:process.env.MCP_WRITE_ENABLED!=="true",
   writeEnabled:process.env.MCP_WRITE_ENABLED==="true",
   firebase:!!(process.env.FIREBASE_DATABASE_URL&&(process.env.FIREBASE_SERVICE_ACCOUNT_JSON||process.env.GOOGLE_SERVICE_ACCOUNT_JSON)),
@@ -52,7 +52,15 @@ const handler=createMcpHandler((server)=>{
   analyticsCaller:(()=>{try{return analyticsCredentialIdentity();}catch{return {error:"Firebase insights credentials unavailable"};}})(),
   crashlytics:!!((process.env.FIREBASE_SERVICE_ACCOUNT_JSON||process.env.GOOGLE_SERVICE_ACCOUNT_JSON)&&process.env.ANDROID_PACKAGE_NAME),
   analytics:!!((process.env.FIREBASE_SERVICE_ACCOUNT_JSON||process.env.GOOGLE_SERVICE_ACCOUNT_JSON)&&process.env.ANDROID_PACKAGE_NAME),
-  note:"Configured does not guarantee Google granted API access. Run account-list tools to verify."
+  ga4LiveProbe:await (async()=>{
+   try{
+    const report=await analyticsReport("overview",1,1);
+    return {ok:true,propertyId:report.propertyId,scopedToAndroidStream:report.scopedToAndroidStream};
+   }catch(e){
+    return {ok:false,error:e instanceof Error?e.message.slice(0,350):"Unknown GA4 error"};
+   }
+  })(),
+  note:"Configured does not guarantee Google granted API access; ga4LiveProbe confirms GA4 Data API reachability."
  })));
 
  server.registerTool("firebase_read",{description:"Read a bounded Firebase Realtime Database subtree. Restricted to FIREBASE_ALLOWED_PREFIX; read-only.",_meta:{securitySchemes:[{type:"oauth2",scopes:["mcp:read"]}]},inputSchema:z.object({path:z.string().min(1).default("/mcp"),maxChildren:z.number().int().min(1).max(100).default(20)})},async({path,maxChildren})=>result("firebase_read",()=>firebaseRead(path,maxChildren)));

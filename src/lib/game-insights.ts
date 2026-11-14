@@ -90,15 +90,28 @@ export async function crashlyticsListEvents(input:{issueId:string;hours:number;v
 }
 type AnalyticsDetails={analyticsProperty?:{id?:string};streamMappings?:Array<{app?:string;streamId?:string}>};
 async function analyticsContext():Promise<{propertyId:string;streamId?:string}>{
- const details=await googleGet(
-  `https://firebase.googleapis.com/v1beta1/projects/${encodeURIComponent(project())}/analyticsDetails`,
-  await insightsToken("firebase")
- ) as AnalyticsDetails;
- const id=(process.env.GA4_PROPERTY_ID||details.analyticsProperty?.id||"").replace(/^properties\//,"");
+ // Admin-provided IDs are supported even when the Firebase Analytics link endpoint is unavailable.
+ const propertyId=process.env.GA4_PROPERTY_ID?.trim().replace(/^properties\//,"");
+ const overrideStream=process.env.GA4_ANDROID_STREAM_ID?.trim();
+ if(propertyId&&overrideStream){
+  if(!/^\d{5,30}$/.test(propertyId)||!/^\d{1,30}$/.test(overrideStream))throw new Error("Invalid GA4_PROPERTY_ID or GA4_ANDROID_STREAM_ID");
+  return {propertyId,streamId:overrideStream};
+ }
+ let details:AnalyticsDetails;
+ try{
+  details=await googleGet(
+   `https://firebase.googleapis.com/v1beta1/projects/${encodeURIComponent(project())}/analyticsDetails`,
+   await insightsToken("firebase")
+  ) as AnalyticsDetails;
+ }catch(error){
+  const reason=error instanceof Error?error.message:"Unknown error";
+  throw new Error(`Firebase Management getAnalyticsDetails failed for ${project()}: ${reason}. Grant Firebase Analytics Viewer/Admin IAM or configure both GA4_PROPERTY_ID and GA4_ANDROID_STREAM_ID.`);
+ }
+ const id=(propertyId||details.analyticsProperty?.id||"").replace(/^properties\//,"");
  if(!/^\d{5,30}$/.test(id))throw new Error("GA4 property not linked or GA4_PROPERTY_ID is invalid");
  const app=await androidAppId();
  const mapping=details.streamMappings?.find(x=>x.app?.endsWith(`/androidApps/${app}`));
- const streamId=process.env.GA4_ANDROID_STREAM_ID||mapping?.streamId;
+ const streamId=overrideStream||mapping?.streamId;
  if(!streamId||!/^\d{1,30}$/.test(streamId))throw new Error("GA4 Android stream not found. Set GA4_ANDROID_STREAM_ID to avoid mixing other app data.");
  return {propertyId:id,streamId};
 }

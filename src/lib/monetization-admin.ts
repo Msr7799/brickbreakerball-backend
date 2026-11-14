@@ -37,6 +37,8 @@ export async function admobCreateAdUnit(input:{account:string;appId:string;displ
  const account=await ensureAdmobAccount(input.account);
  if(!/^ca-app-pub-\d{10,20}~\d{5,30}$/.test(input.appId))throw new Error("Invalid AdMob app ID");
  if(!input.appId.startsWith("ca-app-"+account.slice("accounts/".length)))throw new Error("App publisher ID must match AdMob account");
+ const appList=await googleGet(`https://admob.googleapis.com/v1/${account}/apps`,await oauthToken("admob"),{pageSize:100}) as {app?:Array<{appId?:string}>};
+ if(!appList.app?.some(x=>x.appId===input.appId))throw new Error("AdMob app is not present among authorized apps");
  if(input.displayName.trim().length<2||input.displayName.length>80)throw new Error("Ad unit name must be 2-80 characters");
  const body:Record<string,unknown>={appId:input.appId,displayName:input.displayName.trim(),adFormat:input.adFormat};
  if(input.adFormat==="REWARDED"){
@@ -71,6 +73,9 @@ export async function adsenseListAdClients(account:string){
 export async function adsenseCreateDisplayAdUnit(account:string,adclient:string,displayName:string){
  await ensureAdsenseAccount(account);
  if(!/^ca-pub-\d{10,20}$/.test(adclient)&&!/^ca-[a-zA-Z0-9-]{4,80}$/.test(adclient))throw new Error("Invalid AdSense ad client ID");
+ const clients=await adsenseListAdClients(account) as {adClients?:Array<{name:string;productCode?:string;state?:string}>};
+ const selected=clients.adClients?.find(x=>x.name===`${account}/adclients/${adclient}`);
+ if(!selected||selected.productCode!=="AFC"||selected.state!=="READY")throw new Error("Only approved READY AdSense for Content (AFC) ad clients can create ad units");
  if(displayName.trim().length<2||displayName.length>80)throw new Error("Ad unit name must be 2-80 characters");
  // Google restricts this API method to AdSense for Platforms projects.
  const body={displayName:displayName.trim(),state:"ACTIVE",contentAdsSettings:{size:"1x3",type:"DISPLAY"}};

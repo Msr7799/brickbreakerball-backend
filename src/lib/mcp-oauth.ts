@@ -96,7 +96,8 @@ export async function verifyMcpOauthAccess(token:string|null,requiredScope:"mcp:
  return !!row&&row.scope.split(/\s+/).includes(requiredScope);
 }
 export function oauthChallenge():string{
- return 'Bearer resource_metadata="'+oauthOrigin()+'/.well-known/oauth-protected-resource", scope="'+OAUTH_SCOPE+'"';
+ const scopes=process.env.MCP_WRITE_ENABLED==="true"?`${OAUTH_SCOPE} mcp:write`:OAUTH_SCOPE;
+ return 'Bearer resource_metadata="'+oauthOrigin()+'/.well-known/oauth-protected-resource", scope="'+scopes+'"';
 }
 export function safeOauthResponse(data:Record<string,unknown>):Response{
  return Response.json(data,{headers:{...oauthHeaders,"Pragma":"no-cache"}});

@@ -41,8 +41,8 @@ const handler=createMcpHandler((server)=>{
   admob:!!((process.env.GOOGLE_ADMOB_REFRESH_TOKEN||process.env.GOOGLE_OAUTH_REFRESH_TOKEN)&&process.env.GOOGLE_OAUTH_CLIENT_ID&&process.env.GOOGLE_OAUTH_CLIENT_SECRET),
   adsense:!!((process.env.GOOGLE_ADSENSE_REFRESH_TOKEN||process.env.GOOGLE_OAUTH_REFRESH_TOKEN)&&process.env.GOOGLE_OAUTH_CLIENT_ID&&process.env.GOOGLE_OAUTH_CLIENT_SECRET),
   tavily:!!process.env.TAVILY_API_KEY,
-  crashlytics:!!(process.env.GOOGLE_SERVICE_ACCOUNT_JSON&&process.env.GOOGLE_CLOUD_PROJECT_ID&&process.env.ANDROID_PACKAGE_NAME),
-  analytics:!!(process.env.GOOGLE_SERVICE_ACCOUNT_JSON&&process.env.GOOGLE_CLOUD_PROJECT_ID&&process.env.ANDROID_PACKAGE_NAME),
+  crashlytics:!!((process.env.FIREBASE_SERVICE_ACCOUNT_JSON||process.env.GOOGLE_SERVICE_ACCOUNT_JSON)&&process.env.ANDROID_PACKAGE_NAME),
+  analytics:!!((process.env.FIREBASE_SERVICE_ACCOUNT_JSON||process.env.GOOGLE_SERVICE_ACCOUNT_JSON)&&process.env.ANDROID_PACKAGE_NAME),
   note:"Configured does not guarantee Google granted API access. Run account-list tools to verify."
  })));
 

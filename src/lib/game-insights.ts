@@ -1,8 +1,29 @@
 /** Audited MCP read-only adapters for Firebase Crashlytics and GA4 Data API. */
 import {assertEnv} from "./security";
-import {googleGet,googleRequest,googleToken} from "./google";
+import {googleGet,googleRequest} from "./google";
+import {GoogleAuth} from "google-auth-library";
 
-const project=()=>assertEnv("GOOGLE_CLOUD_PROJECT_ID");
+/** The Firebase Analytics/Crashlytics project may differ from the Google Play RTDN Cloud project. */
+function firebaseCredentials():{project_id?:string;client_email?:string;[key:string]:unknown}{
+ const raw=process.env.FIREBASE_SERVICE_ACCOUNT_JSON||assertEnv("GOOGLE_SERVICE_ACCOUNT_JSON");
+ try{
+  const value=JSON.parse(raw) as Record<string,unknown>;
+  if(!value||typeof value!=="object"||typeof value.client_email!=="string")throw Error("missing service-account identity");
+  return value as {project_id?:string;client_email?:string};
+ }catch{throw new Error("Invalid Firebase service-account JSON");}
+}
+const project=()=>{
+ const id=process.env.FIREBASE_INSIGHTS_PROJECT_ID||process.env.FIREBASE_PROJECT_ID||firebaseCredentials().project_id||assertEnv("GOOGLE_CLOUD_PROJECT_ID");
+ if(!/^[a-z][a-z0-9-]{3,62}$/.test(id))throw new Error("Invalid Firebase insights project ID");
+ return id;
+};
+async function insightsToken(service:"firebase"|"analytics"):Promise<string>{
+ const scopes=service==="firebase"?["https://www.googleapis.com/auth/cloud-platform"]:["https://www.googleapis.com/auth/analytics.readonly"];
+ const auth=new GoogleAuth({credentials:firebaseCredentials(),scopes});
+ const client=await auth.getClient(),access=await client.getAccessToken();
+ if(!access.token)throw new Error("Could not get Firebase insights read token");
+ return access.token;
+}
 const packageName=()=>assertEnv("ANDROID_PACKAGE_NAME");
 const safeId=(id:string,kind:string)=>{
  if(!/^[a-zA-Z0-9_-]{1,120}$/.test(id))throw new Error(`Invalid ${kind} identifier`);
@@ -16,7 +37,7 @@ function configAppId(){
 /** Use an explicit Firebase App ID or discover the Android app matching our package. */
 async function androidAppId():Promise<string>{
  const explicit=configAppId();if(explicit)return explicit;
- const token=await googleToken("cloud");
+ const token=await insightsToken("firebase");
  let pageToken:string|undefined;
  for(let page=0;page<10;page++){
   const payload=await googleGet(`https://firebase.googleapis.com/v1beta1/projects/${encodeURIComponent(project())}/androidApps`,token,{pageSize:100,pageToken}) as {
@@ -87,6 +108,6 @@ export async function analyticsReport(kind:"overview"|"events"|"versions",days:n
  };
  if(streamId)body.dimensionFilter={filter:{fieldName:"streamId",stringFilter:{matchType:"EXACT",value:streamId}}};
  if(kind!=="overview")body.orderBys=[{metric:{metricName:kind==="events"?"eventCount":"activeUsers"},desc:true}];
- const data=await googleRequest(`https://analyticsdata.googleapis.com/v1beta/properties/${propertyId}:runReport`,await googleToken("analytics"),"POST",body);
+ const data=await googleRequest(`https://analyticsdata.googleapis.com/v1beta/properties/${propertyId}:runReport`,await insightsToken("analytics"),"POST",body);
  return {propertyId,scopedToAndroidStream:!!streamId,report:kind,data};
 }

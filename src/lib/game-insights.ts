@@ -12,6 +12,12 @@ function firebaseCredentials():{project_id?:string;client_email?:string;[key:str
   return value as {project_id?:string;client_email?:string};
  }catch{throw new Error("Invalid Firebase service-account JSON");}
 }
+/** Safe, non-secret identity of the credentials that GA4 actually uses. */
+export function analyticsCredentialIdentity():{clientEmail:string;source:"FIREBASE_SERVICE_ACCOUNT_JSON"|"GOOGLE_SERVICE_ACCOUNT_JSON";firebaseProject:string}{
+ const source=process.env.FIREBASE_SERVICE_ACCOUNT_JSON?"FIREBASE_SERVICE_ACCOUNT_JSON":"GOOGLE_SERVICE_ACCOUNT_JSON";
+ const credentials=firebaseCredentials();
+ return {clientEmail:credentials.client_email||"unknown",source,firebaseProject:process.env.FIREBASE_INSIGHTS_PROJECT_ID||credentials.project_id||"unknown"};
+}
 const project=()=>{
  const id=process.env.FIREBASE_INSIGHTS_PROJECT_ID||process.env.FIREBASE_PROJECT_ID||firebaseCredentials().project_id||assertEnv("GOOGLE_CLOUD_PROJECT_ID");
  if(!/^[a-z][a-z0-9-]{3,62}$/.test(id))throw new Error("Invalid Firebase insights project ID");
@@ -110,7 +116,14 @@ export async function analyticsReport(kind:"overview"|"events"|"versions",days:n
  };
  if(streamId)body.dimensionFilter={filter:{fieldName:"streamId",stringFilter:{matchType:"EXACT",value:streamId}}};
  if(kind!=="overview")body.orderBys=[{metric:{metricName:kind==="events"?"eventCount":"activeUsers"},desc:true}];
- const data=await googleRequest(`https://analyticsdata.googleapis.com/v1beta/properties/${propertyId}:runReport`,await insightsToken("analytics"),"POST",body);
+ let data:unknown;
+ try{
+  data=await googleRequest(`https://analyticsdata.googleapis.com/v1beta/properties/${propertyId}:runReport`,await insightsToken("analytics"),"POST",body);
+ }catch(error){
+  const reason=error instanceof Error?error.message:"Unknown Google Analytics API error";
+  // Include the property, not any credentials or access tokens. Dashboard errors are admin-only.
+  throw new Error(`GA4 property ${propertyId}, Android stream ${streamId}: ${reason}`);
+ }
  return {propertyId,scopedToAndroidStream:!!streamId,report:kind,data};
 }
 

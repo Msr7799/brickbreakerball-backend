@@ -6,6 +6,7 @@ import {firebaseRead} from "../../../src/lib/firebase";
 import {googleGet,googleRequest,googleToken,oauthToken} from "../../../src/lib/google";
 import {writeAudit,toolsMeta} from "../../../src/lib/mcp-control";
 import {pubsubCreateTopic,pubsubCreatePullSubscription,pubsubUpdatePullAckDeadline,admobCreateAdUnit,adsenseListAlerts,adsenseListPolicyIssues,adsenseListPayments,adsenseListAdClients,adsenseCreateDisplayAdUnit} from "../../../src/lib/monetization-admin";
+import {monetizationReadinessAudit} from "../../../src/lib/monetization-diagnostics";
 import {getAssistantSettings,allowedTool} from "../../../src/lib/assistant-settings";
 import {searchTavily} from "../../../src/lib/tavily";
 import {analyticsCredentialIdentity,crashlyticsListReports,crashlyticsGetReport,crashlyticsGetIssue,crashlyticsListEvents,analyticsReport,crashlyticsListNotes,crashlyticsUpdateIssue,crashlyticsCreateNote,crashlyticsDeleteNote,analyticsListKeyEvents,analyticsCreateKeyEvent,analyticsUpdateKeyEvent,analyticsDeleteKeyEvent} from "../../../src/lib/game-insights";
@@ -61,7 +62,8 @@ const handler=createMcpHandler((server)=>{
     return {ok:false,error:e instanceof Error?e.message.slice(0,350):"Unknown GA4 error"};
    }
   })(),
-  note:"Configured does not guarantee Google granted API access; ga4LiveProbe confirms GA4 Data API reachability."
+  monetizationReadiness:await monetizationReadinessAudit(),
+  note:"Configured does not guarantee Google granted API access. monetizationReadiness is a live read-only API audit; exact AdMob policy-center reasons may require manual console inspection."
  })));
 
  server.registerTool("firebase_read",{description:"Read a bounded Firebase Realtime Database subtree. Restricted to FIREBASE_ALLOWED_PREFIX; read-only.",_meta:{securitySchemes:[{type:"oauth2",scopes:["mcp:read"]}]},inputSchema:z.object({path:z.string().min(1).default("/mcp"),maxChildren:z.number().int().min(1).max(100).default(20)})},async({path,maxChildren})=>result("firebase_read",()=>firebaseRead(path,maxChildren)));

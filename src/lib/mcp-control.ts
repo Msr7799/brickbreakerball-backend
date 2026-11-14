@@ -277,7 +277,7 @@ export async function runReadTool(name:string,args:unknown,source:"dashboard"|"m
    case "adsense_list_payments":output=await adsenseListPayments(p.account);break;
    case "adsense_list_adclients":output=await adsenseListAdClients(p.account);break;
    case "adsense_create_display_ad_unit":output=await adsenseCreateDisplayAdUnit(p.account,p.adclient,p.displayName);break;
-   case "adsense_report":{const u=new URL(`https://adsense.googleapis.com/v2/${validateResource("adsense",p.account)}/reports:generate`);u.searchParams.set("dateRange",p.dateRange);["ESTIMATED_EARNINGS","CLICKS","IMPRESSIONS"].forEach(m=>u.searchParams.append("metrics[]",m));u.searchParams.append("dimensions[]","DATE");output=await googleGet(u.toString(),await oauthToken("adsense"));break;}
+   case "adsense_report":{const u=new URL(`https://adsense.googleapis.com/v2/${validateResource("adsense",p.account)}/reports:generate`);u.searchParams.set("dateRange",p.dateRange);["ESTIMATED_EARNINGS","CLICKS","IMPRESSIONS"].forEach(m=>u.searchParams.append("metrics",m));u.searchParams.append("dimensions","DATE");output=await googleGet(u.toString(),await oauthToken("adsense"));break;}
   }
   await writeAudit({source,action:name,service:toolsMeta.find(t=>t.id===name)?.service,success:true,durationMs:Date.now()-started,detail:isWrite?"Admin-approved write completed":"Read-only operation completed"});
   return output??{};

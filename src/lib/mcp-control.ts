@@ -4,6 +4,7 @@ import {firebaseRead,firebaseProbe} from "./firebase";
 import {assertEnv,validateDateRange,dateObject,validateResource} from "./security";
 import {z} from "zod";
 import {searchTavily} from "./tavily";
+import {pubsubCreateTopic,pubsubCreatePullSubscription,pubsubUpdatePullAckDeadline,admobCreateAdUnit,adsenseListAlerts,adsenseListPolicyIssues,adsenseListPayments,adsenseListAdClients,adsenseCreateDisplayAdUnit} from "./monetization-admin";
 import {analyticsCredentialIdentity,crashlyticsListReports,crashlyticsGetReport,crashlyticsGetIssue,crashlyticsListEvents,analyticsReport,crashlyticsListNotes,crashlyticsUpdateIssue,crashlyticsCreateNote,crashlyticsDeleteNote,analyticsListKeyEvents,analyticsCreateKeyEvent,analyticsUpdateKeyEvent,analyticsDeleteKeyEvent} from "./game-insights";
 import type {Db} from "mongodb";
 
@@ -155,8 +156,12 @@ const toolSchemas={
  play_list_one_time_products:z.object({pageSize:z.coerce.number().int().min(1).max(100).default(50)}),
  play_list_subscriptions:z.object({pageSize:z.coerce.number().int().min(1).max(100).default(50)}),
  cloud_get_project:z.object({}),cloud_list_pubsub_topics:z.object({pageSize:z.coerce.number().int().min(1).max(100).default(30)}),cloud_list_pubsub_subscriptions:z.object({pageSize:z.coerce.number().int().min(1).max(100).default(30)}),
+ pubsub_create_topic:z.object({topicId:z.string().regex(/^forgepulse-[a-zA-Z0-9-]{1,64}$/),confirm:z.literal("CONFIRM")}),
+ pubsub_create_pull_subscription:z.object({subscriptionId:z.string().regex(/^forgepulse-[a-zA-Z0-9-]{1,64}$/),topicId:z.string().regex(/^forgepulse-[a-zA-Z0-9-]{1,64}$/),ackDeadlineSeconds:z.coerce.number().int().min(10).max(600).default(20),confirm:z.literal("CONFIRM")}),
+ pubsub_update_pull_ack_deadline:z.object({subscriptionId:z.string().regex(/^forgepulse-[a-zA-Z0-9-]{1,64}$/),ackDeadlineSeconds:z.coerce.number().int().min(10).max(600),confirm:z.literal("CONFIRM")}),
  admob_list_accounts:z.object({}),admob_list_apps:z.object({account}),admob_list_ad_units:z.object({account}),
  admob_network_report:z.object({account,startDate:d,endDate:d}),
+ admob_create_ad_unit:z.object({account,appId:z.string().regex(/^ca-app-pub-\\d{10,20}~\\d{5,30}$/),displayName:z.string().trim().min(2).max(80),adFormat:z.enum(["BANNER","INTERSTITIAL","NATIVE","APP_OPEN","REWARDED","REWARDED_INTERSTITIAL"]),rewardAmount:z.coerce.number().int().min(1).max(10000).optional(),rewardItem:z.string().min(1).max(60).optional(),confirm:z.literal("CONFIRM")}),
  crashlytics_list_reports:z.object({}),
  crashlytics_get_report:z.object({reportId:z.string().min(1).max(120),hours:z.coerce.number().int().min(1).max(2160).default(24),version:z.string().max(80).optional(),pageSize:z.coerce.number().int().min(1).max(100).default(25),pageToken:z.string().max(1200).optional()}),
  crashlytics_get_issue:z.object({issueId:z.string().min(1).max(120)}),
@@ -172,7 +177,9 @@ const toolSchemas={
  analytics_create_key_event:z.object({eventName:z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,39}$/),countingMethod:z.enum(["ONCE_PER_EVENT","ONCE_PER_SESSION"]),confirm:z.literal("CONFIRM")}),
  analytics_update_key_event:z.object({keyEventId:z.string().min(1).max(120),countingMethod:z.enum(["ONCE_PER_EVENT","ONCE_PER_SESSION"]),confirm:z.literal("CONFIRM")}),
  analytics_delete_key_event:z.object({keyEventId:z.string().min(1).max(120),confirm:z.literal("CONFIRM")}),
- adsense_list_accounts:z.object({}),adsense_list_sites:z.object({account}),adsense_report:z.object({account,dateRange:z.enum(["TODAY","YESTERDAY","LAST_7_DAYS","LAST_30_DAYS","MONTH_TO_DATE"]).default("LAST_7_DAYS")})
+ adsense_list_accounts:z.object({}),adsense_list_sites:z.object({account}),adsense_report:z.object({account,dateRange:z.enum(["TODAY","YESTERDAY","LAST_7_DAYS","LAST_30_DAYS","MONTH_TO_DATE"]).default("LAST_7_DAYS")}),
+ adsense_list_alerts:z.object({account}),adsense_list_policy_issues:z.object({account}),adsense_list_payments:z.object({account}),adsense_list_adclients:z.object({account}),
+ adsense_create_display_ad_unit:z.object({account,adclient:z.string().regex(/^ca-[a-zA-Z0-9-]{4,80}$/),displayName:z.string().trim().min(2).max(80),confirm:z.literal("CONFIRM")})
 } as const;
 export type ToolId=keyof typeof toolSchemas;
 export const toolsMeta:{id:ToolId;service:ServiceId;title:string;description:string;mode?:"write";args:{key:string;label:string;hint?:string}[]}[]=[
@@ -200,12 +207,21 @@ export const toolsMeta:{id:ToolId;service:ServiceId;title:string;description:str
  {id:"cloud_get_project",service:"cloud",title:"معلومات مشروع Cloud",description:"التحقق من تفاصيل مشروع Google Cloud",args:[]},
  {id:"cloud_list_pubsub_topics",service:"cloud",title:"مواضيع Pub/Sub",description:"عرض مواضيع الإشعارات",args:[]},
  {id:"cloud_list_pubsub_subscriptions",service:"cloud",title:"اشتراكات Pub/Sub",description:"عرض اشتراكات إشعارات المشتريات",args:[]},
+ {id:"pubsub_create_topic",service:"cloud",mode:"write",title:"إنشاء Topic جديد",description:"موضوع Pub/Sub جديد باسم يبدأ forgepulse-، من دون المساس بالشراء",args:[{key:"topicId",label:"معرّف الموضوع",hint:"forgepulse-test-topic"},{key:"confirm",label:"اكتب CONFIRM للتأكيد"}]},
+ {id:"pubsub_create_pull_subscription",service:"cloud",mode:"write",title:"إنشاء اشتراك Pull",description:"اشتراك جديد مربوط بموضوع ForgePulse، بدون تغيير RTDN",args:[{key:"subscriptionId",label:"معرّف الاشتراك",hint:"forgepulse-test-sub"},{key:"topicId",label:"معرّف الموضوع",hint:"forgepulse-test-topic"},{key:"ackDeadlineSeconds",label:"مهلة التأكيد بالثواني",hint:"20"},{key:"confirm",label:"اكتب CONFIRM للتأكيد"}]},
+ {id:"pubsub_update_pull_ack_deadline",service:"cloud",mode:"write",title:"تعديل مهلة Pull",description:"تعديل مهلة الإقرار لاشتراك Pull خاص بـForgePulse فقط",args:[{key:"subscriptionId",label:"معرّف الاشتراك",hint:"forgepulse-test-sub"},{key:"ackDeadlineSeconds",label:"المهلة بالثواني",hint:"20"},{key:"confirm",label:"اكتب CONFIRM للتأكيد"}]},
  {id:"admob_list_accounts",service:"admob",title:"حسابات AdMob",description:"جلب الحسابات المصرّح لها",args:[]},
  {id:"admob_list_apps",service:"admob",title:"تطبيقات AdMob",description:"عرض التطبيقات الإعلانية",args:[{key:"account",label:"معرّف الحساب",hint:"accounts/pub-..."}]},
  {id:"admob_list_ad_units",service:"admob",title:"وحدات AdMob",description:"عرض الوحدات الإعلانية",args:[{key:"account",label:"معرّف الحساب",hint:"accounts/pub-..."}]},
  {id:"admob_network_report",service:"admob",title:"تقرير شبكة AdMob",description:"تقرير للأرباح والظهور",args:[{key:"account",label:"معرّف الحساب",hint:"accounts/pub-..."},{key:"startDate",label:"تاريخ البداية",hint:"2026-10-01"},{key:"endDate",label:"تاريخ النهاية",hint:"2026-10-17"}]},
+ {id:"admob_create_ad_unit",service:"admob",mode:"write",title:"إنشاء وحدة AdMob",description:"إنشاء وحدة إعلانية جديدة إذا Google سمحت بالحساب والمشروع",args:[{key:"account",label:"حساب AdMob",hint:"accounts/pub-..."},{key:"appId",label:"معرّف التطبيق AdMob",hint:"ca-app-pub-...~..."},{key:"displayName",label:"اسم الوحدة"},{key:"adFormat",label:"نوع الإعلان",hint:"BANNER"},{key:"confirm",label:"اكتب CONFIRM للتأكيد"}]},
  {id:"adsense_list_accounts",service:"adsense",title:"حسابات AdSense",description:"جلب حسابات الناشر",args:[]},
  {id:"adsense_list_sites",service:"adsense",title:"مواقع AdSense",description:"عرض حالات قبول المواقع",args:[{key:"account",label:"معرّف الحساب",hint:"accounts/pub-..."}]},
+ {id:"adsense_list_alerts",service:"adsense",title:"تنبيهات AdSense",description:"استكشاف رسائل الإنذار والتحقق من الإعدادات",args:[{key:"account",label:"حساب AdSense",hint:"accounts/pub-..."}]},
+ {id:"adsense_list_policy_issues",service:"adsense",title:"مشاكل سياسات AdSense",description:"عرض مخالفات سياسات المواقع",args:[{key:"account",label:"حساب AdSense",hint:"accounts/pub-..."}]},
+ {id:"adsense_list_payments",service:"adsense",title:"ملخص مدفوعات AdSense",description:"عرض الأرباح المدفوعة وغير المدفوعة من دون أي بيانات بنكية",args:[{key:"account",label:"حساب AdSense",hint:"accounts/pub-..."}]},
+ {id:"adsense_list_adclients",service:"adsense",title:"عملاء الإعلانات AdSense",description:"فحص معرفات وحدات الإعلان المتاحة",args:[{key:"account",label:"حساب AdSense",hint:"accounts/pub-..."}]},
+ {id:"adsense_create_display_ad_unit",service:"adsense",mode:"write",title:"إنشاء وحدة AdSense",description:"خاص بالمشاريع التي تمنحها Google تصريح AdSense for Platforms",args:[{key:"account",label:"حساب AdSense",hint:"accounts/pub-..."},{key:"adclient",label:"Ad client ID",hint:"ca-pub-..."},{key:"displayName",label:"اسم الوحدة"},{key:"confirm",label:"اكتب CONFIRM للتأكيد"}]},
  {id:"adsense_report",service:"adsense",title:"تقارير AdSense",description:"قراءة إحصائيات الأرباح",args:[{key:"account",label:"معرّف الحساب",hint:"accounts/pub-..."},{key:"dateRange",label:"الفترة",hint:"LAST_7_DAYS"}]}
 ];
 export async function runReadTool(name:string,args:unknown,source:"dashboard"|"mcp"="dashboard"){
@@ -246,12 +262,21 @@ export async function runReadTool(name:string,args:unknown,source:"dashboard"|"m
    case "cloud_get_project":output=await googleGet(`https://cloudresourcemanager.googleapis.com/v3/projects/${encodeURIComponent(cloudId())}`,await googleToken("cloud"));break;
    case "cloud_list_pubsub_topics":output=await googleGet(`${projectUrl()}/topics`,await googleToken("cloud"),{pageSize:p.pageSize});break;
    case "cloud_list_pubsub_subscriptions":output=await googleGet(`${projectUrl()}/subscriptions`,await googleToken("cloud"),{pageSize:p.pageSize});break;
+   case "pubsub_create_topic":output=await pubsubCreateTopic(p.topicId);break;
+   case "pubsub_create_pull_subscription":output=await pubsubCreatePullSubscription(p.subscriptionId,p.topicId,p.ackDeadlineSeconds);break;
+   case "pubsub_update_pull_ack_deadline":output=await pubsubUpdatePullAckDeadline(p.subscriptionId,p.ackDeadlineSeconds);break;
    case "admob_list_accounts":output=await googleGet("https://admob.googleapis.com/v1/accounts",await oauthToken("admob"));break;
    case "admob_list_apps":output=await googleGet(`https://admob.googleapis.com/v1/${validateResource("admob",p.account)}/apps`,await oauthToken("admob"),{pageSize:100});break;
    case "admob_list_ad_units":output=await googleGet(`https://admob.googleapis.com/v1/${validateResource("admob",p.account)}/adUnits`,await oauthToken("admob"),{pageSize:100});break;
    case "admob_network_report":validateDateRange(p.startDate,p.endDate);output=await googleRequest(`https://admob.googleapis.com/v1/${validateResource("admob",p.account)}/networkReport:generate`,await oauthToken("admob"),"POST",{reportSpec:{dateRange:{startDate:dateObject(p.startDate),endDate:dateObject(p.endDate)},dimensions:["DATE"],metrics:["ESTIMATED_EARNINGS","IMPRESSIONS"]}});break;
+   case "admob_create_ad_unit":output=await admobCreateAdUnit(p as Parameters<typeof admobCreateAdUnit>[0]);break;
    case "adsense_list_accounts":output=await googleGet("https://adsense.googleapis.com/v2/accounts",await oauthToken("adsense"));break;
    case "adsense_list_sites":output=await googleGet(`https://adsense.googleapis.com/v2/${validateResource("adsense",p.account)}/sites`,await oauthToken("adsense"),{pageSize:100});break;
+   case "adsense_list_alerts":output=await adsenseListAlerts(p.account);break;
+   case "adsense_list_policy_issues":output=await adsenseListPolicyIssues(p.account);break;
+   case "adsense_list_payments":output=await adsenseListPayments(p.account);break;
+   case "adsense_list_adclients":output=await adsenseListAdClients(p.account);break;
+   case "adsense_create_display_ad_unit":output=await adsenseCreateDisplayAdUnit(p.account,p.adclient,p.displayName);break;
    case "adsense_report":{const u=new URL(`https://adsense.googleapis.com/v2/${validateResource("adsense",p.account)}/reports:generate`);u.searchParams.set("dateRange",p.dateRange);["ESTIMATED_EARNINGS","CLICKS","IMPRESSIONS"].forEach(m=>u.searchParams.append("metrics[]",m));u.searchParams.append("dimensions[]","DATE");output=await googleGet(u.toString(),await oauthToken("adsense"));break;}
   }
   await writeAudit({source,action:name,service:toolsMeta.find(t=>t.id===name)?.service,success:true,durationMs:Date.now()-started,detail:isWrite?"Admin-approved write completed":"Read-only operation completed"});

@@ -18,7 +18,13 @@ const preWriteToolIds=[...originalToolIds,
  "analytics_overview","analytics_top_events","analytics_app_versions"
 ];
 const preWriteAdditions=preWriteToolIds.filter(id=>!originalToolIds.includes(id));
-const adminToolIds=defaults.toolIds.filter(id=>!preWriteToolIds.includes(id));
+const initialAdminToolIds=[
+ "crashlytics_list_notes","crashlytics_update_issue","crashlytics_create_note","crashlytics_delete_note",
+ "analytics_list_key_events","analytics_create_key_event","analytics_update_key_event","analytics_delete_key_event"
+];
+const adminToolIds=initialAdminToolIds;
+const beforeMonetizationToolIds=[...preWriteToolIds,...initialAdminToolIds];
+const monetizationToolIds=defaults.toolIds.filter(id=>!beforeMonetizationToolIds.includes(id));
 export async function getAssistantSettings():Promise<AssistantSettings>{
  const collection=(await db()).collection<AssistantSettings & {_id:string;schemaVersion?:number}>("assistant_settings");
  let saved=await collection.findOne({_id:"main"});
@@ -38,6 +44,15 @@ export async function getAssistantSettings():Promise<AssistantSettings>{
  if(fullReadPreset){
   await collection.updateOne({_id:"main",schemaVersion:2,toolIds:{$size:preWriteToolIds.length}},
    {$addToSet:{toolIds:{$each:adminToolIds}},$set:{schemaVersion:3}});
+  saved=await collection.findOne({_id:"main"});
+ }
+ // Upgrade only the untouched 31-tool all-enabled preset. Never alter custom allowlists.
+ const existingIds=saved?.toolIds;
+ const fullAdminPreset=!!saved&&saved.schemaVersion===3&&!!existingIds&&
+  existingIds.length===beforeMonetizationToolIds.length&&beforeMonetizationToolIds.every(id=>existingIds.includes(id));
+ if(fullAdminPreset){
+  await collection.updateOne({_id:"main",schemaVersion:3,toolIds:{$size:beforeMonetizationToolIds.length}},
+   {$addToSet:{toolIds:{$each:monetizationToolIds}},$set:{schemaVersion:4}});
   saved=await collection.findOne({_id:"main"});
  }
  return {...defaults,...saved,toolIds:saved?.toolIds??defaults.toolIds};

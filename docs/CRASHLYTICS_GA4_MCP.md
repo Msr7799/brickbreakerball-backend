@@ -26,7 +26,7 @@ Optional: `FIREBASE_ANDROID_APP_ID` and `GA4_PROPERTY_ID`. When omitted, Firebas
 
 Required access:
 1. Enable Firebase Management API, Firebase Crashlytics API, and Google Analytics Data API in Google Cloud (when applicable).
-2. Assign the configured service account suitable **read-only** Crashlytics/Firebase access.
+2. Assign the Firebase service account the read-only **Firebase Crashlytics Viewer** IAM role (`roles/firebasecrashlytics.viewer`) in project `brick-breaker-ball-8e4f5`, plus minimum required Firebase project app-discovery permission.
 3. Add the service account email as a **Viewer** to the linked GA4 property. If GA4 is not linked to Firebase, configure that link before using the auto-discovery path.
 4. In ForgePulse assistant settings, enable the new tool IDs if the stored MCP allowlist has explicitly selected tools. A list of tools on the page does not override that allowlist.
 5. Run the new service connection checks, then test a 24-hour Crashlytics report filtered to `2.9.0 (26)`.

@@ -191,9 +191,9 @@ export async function runReadTool(name:string,args:unknown,source:"dashboard"|"m
    case "tavily_search":output=await searchTavily(p.query);break;
    case "firebase_read":output=await firebaseRead(p.path,p.maxChildren);break;
    case "crashlytics_list_reports":output=await crashlyticsListReports();break;
-   case "crashlytics_get_report":output=await crashlyticsGetReport(p);break;
+   case "crashlytics_get_report":output=await crashlyticsGetReport({reportId:p.reportId,hours:p.hours,version:p.version,pageSize:p.pageSize,pageToken:p.pageToken});break;
    case "crashlytics_get_issue":output=await crashlyticsGetIssue(p.issueId);break;
-   case "crashlytics_list_events":output=await crashlyticsListEvents(p);break;
+   case "crashlytics_list_events":output=await crashlyticsListEvents({issueId:p.issueId,hours:p.hours,version:p.version,pageSize:p.pageSize,pageToken:p.pageToken});break;
    case "analytics_overview":output=await analyticsReport("overview",p.days,90);break;
    case "analytics_top_events":output=await analyticsReport("events",p.days,p.limit);break;
    case "analytics_app_versions":output=await analyticsReport("versions",p.days,p.limit);break;

@@ -4,10 +4,11 @@ import {firebaseRead,firebaseProbe} from "./firebase";
 import {assertEnv,validateDateRange,dateObject,validateResource} from "./security";
 import {z} from "zod";
 import {searchTavily} from "./tavily";
+import {crashlyticsListReports,crashlyticsGetReport,crashlyticsGetIssue,crashlyticsListEvents,analyticsReport} from "./game-insights";
 import type {Db} from "mongodb";
 
 const {db}=require("../../billing/lib/db.js") as {db:()=>Promise<Db>};
-export type ServiceId="mongodb"|"vercel"|"firebase"|"cloud"|"play"|"admob"|"adsense"|"tavily";
+export type ServiceId="mongodb"|"vercel"|"firebase"|"cloud"|"play"|"admob"|"adsense"|"tavily"|"crashlytics"|"analytics";
 export type ServiceState="connected"|"pending"|"not_configured"|"error";
 /**
  * توضيح أنواع MongoDB:
@@ -22,8 +23,8 @@ type ConnectionCheck={
  latencyMs:number;
  detail:string;
 };
-export const serviceIds:ServiceId[]=["firebase","cloud","play","admob","adsense","tavily","mongodb","vercel"];
-export const serviceLabels:Record<ServiceId,string>={mongodb:"MongoDB",vercel:"Vercel Runtime",firebase:"Firebase",cloud:"Google Cloud",play:"Google Play RTDN",admob:"AdMob",adsense:"AdSense",tavily:"Tavily Search"};
+export const serviceIds:ServiceId[]=["firebase","crashlytics","analytics","cloud","play","admob","adsense","tavily","mongodb","vercel"];
+export const serviceLabels:Record<ServiceId,string>={mongodb:"MongoDB",vercel:"Vercel Runtime",firebase:"Firebase",crashlytics:"Firebase Crashlytics",analytics:"Google Analytics 4",cloud:"Google Cloud",play:"Google Play RTDN",admob:"AdMob",adsense:"AdSense",tavily:"Tavily Search"};
 const packageName=()=>assertEnv("ANDROID_PACKAGE_NAME");
 const cloudId=()=>assertEnv("GOOGLE_CLOUD_PROJECT_ID");
 const playUrl=()=>`https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${encodeURIComponent(packageName())}`;
@@ -36,6 +37,8 @@ export const credentialsReady=(id:ServiceId):boolean=>{
   case "tavily":return has("TAVILY_API_KEY");
   case "firebase":return has("FIREBASE_DATABASE_URL")&&has("FIREBASE_SERVICE_ACCOUNT_JSON");
   case "cloud":return has("GOOGLE_CLOUD_PROJECT_ID")&&has("GOOGLE_SERVICE_ACCOUNT_JSON");
+  case "crashlytics":return has("GOOGLE_CLOUD_PROJECT_ID")&&has("GOOGLE_SERVICE_ACCOUNT_JSON")&&has("ANDROID_PACKAGE_NAME");
+  case "analytics":return has("GOOGLE_CLOUD_PROJECT_ID")&&has("GOOGLE_SERVICE_ACCOUNT_JSON")&&has("ANDROID_PACKAGE_NAME");
   case "play":return has("PUBSUB_PUSH_SERVICE_ACCOUNT")&&has("PUBSUB_AUDIENCE")&&has("GOOGLE_PLAY_PACKAGE_NAME");
   case "admob":return has("GOOGLE_OAUTH_CLIENT_ID")&&has("GOOGLE_OAUTH_CLIENT_SECRET")&&(has("GOOGLE_ADMOB_REFRESH_TOKEN")||has("GOOGLE_OAUTH_REFRESH_TOKEN"));
   case "adsense":return has("GOOGLE_OAUTH_CLIENT_ID")&&has("GOOGLE_OAUTH_CLIENT_SECRET")&&(has("GOOGLE_ADSENSE_REFRESH_TOKEN")||has("GOOGLE_OAUTH_REFRESH_TOKEN"));
@@ -63,6 +66,14 @@ async function probe(id:ServiceId):Promise<string>{
   case "tavily":await searchTavily("Brick Breaker Ball game");return "Tavily search API responded";
   case "firebase":{
    const data=await firebaseProbe();return `Realtime Database accessible under ${data.path}; node ${data.exists?"exists":"is empty or absent"}`;
+  }
+  case "crashlytics":{
+   const data=await crashlyticsListReports() as {reports?:unknown[]};
+   return `Crashlytics API accessible: ${data.reports?.length??0} report types`;
+  }
+  case "analytics":{
+   const data=await analyticsReport("overview",1,1);
+   return `GA4 Data API accessible for property ${data.propertyId}; Android stream ${data.scopedToAndroidStream?"filtered":"unavailable"}`;
   }
   case "cloud":{
    const resp=await googleGet(`https://cloudresourcemanager.googleapis.com/v3/projects/${encodeURIComponent(cloudId())}`,await googleToken("cloud")) as {projectId?:string};
@@ -134,6 +145,13 @@ const toolSchemas={
  cloud_get_project:z.object({}),cloud_list_pubsub_topics:z.object({pageSize:z.coerce.number().int().min(1).max(100).default(30)}),cloud_list_pubsub_subscriptions:z.object({pageSize:z.coerce.number().int().min(1).max(100).default(30)}),
  admob_list_accounts:z.object({}),admob_list_apps:z.object({account}),admob_list_ad_units:z.object({account}),
  admob_network_report:z.object({account,startDate:d,endDate:d}),
+ crashlytics_list_reports:z.object({}),
+ crashlytics_get_report:z.object({reportId:z.string().min(1).max(120),hours:z.coerce.number().int().min(1).max(2160).default(24),version:z.string().max(80).optional(),pageSize:z.coerce.number().int().min(1).max(100).default(25),pageToken:z.string().max(1200).optional()}),
+ crashlytics_get_issue:z.object({issueId:z.string().min(1).max(120)}),
+ crashlytics_list_events:z.object({issueId:z.string().min(1).max(120),hours:z.coerce.number().int().min(1).max(2160).default(24),version:z.string().max(80).optional(),pageSize:z.coerce.number().int().min(1).max(100).default(10),pageToken:z.string().max(1200).optional()}),
+ analytics_overview:z.object({days:z.coerce.number().int().min(1).max(90).default(7)}),
+ analytics_top_events:z.object({days:z.coerce.number().int().min(1).max(90).default(7),limit:z.coerce.number().int().min(1).max(100).default(20)}),
+ analytics_app_versions:z.object({days:z.coerce.number().int().min(1).max(90).default(7),limit:z.coerce.number().int().min(1).max(100).default(20)}),
  adsense_list_accounts:z.object({}),adsense_list_sites:z.object({account}),adsense_report:z.object({account,dateRange:z.enum(["TODAY","YESTERDAY","LAST_7_DAYS","LAST_30_DAYS","MONTH_TO_DATE"]).default("LAST_7_DAYS")})
 } as const;
 export type ToolId=keyof typeof toolSchemas;
@@ -141,6 +159,13 @@ export const toolsMeta:{id:ToolId;service:ServiceId;title:string;description:str
  {id:"tavily_search",service:"tavily",title:"بحث Tavily",description:"بحث ويب مباشر مع روابط المصادر",args:[{key:"query",label:"عبارة البحث",hint:"اكتب ما تريد البحث عنه"}]},
  {id:"gateway_status",service:"vercel",title:"حالة بوابة MCP",description:"يعرض التهيئة من غير أي أسرار",args:[]},
  {id:"firebase_read",service:"firebase",title:"قراءة Firebase",description:"قراءة محدودة من المسار المسموح فقط",args:[{key:"path",label:"المسار",hint:"/mcp"},{key:"maxChildren",label:"أقصى عدد",hint:"20"}]},
+ {id:"crashlytics_list_reports",service:"crashlytics",title:"أنواع تقارير Crashlytics",description:"عرض التقارير المتاحة رسمياً للتطبيق",args:[]},
+ {id:"crashlytics_get_report",service:"crashlytics",title:"تقرير أعطال Crashlytics",description:"تقرير الأعطال حسب الساعات وإصدار اللعبة",args:[{key:"reportId",label:"معرّف التقرير",hint:"topIssues"},{key:"hours",label:"الساعات السابقة",hint:"24"},{key:"version",label:"إصدار اللعبة اختياري",hint:"2.9.0 (26)"}]},
+ {id:"crashlytics_get_issue",service:"crashlytics",title:"تفاصيل عطل",description:"قراءة تفاصيل Issue محدد من Crashlytics",args:[{key:"issueId",label:"معرّف العطل"}]},
+ {id:"crashlytics_list_events",service:"crashlytics",title:"أحداث العطل",description:"استعراض أحدث وقوعات عطل محدد",args:[{key:"issueId",label:"معرّف العطل"},{key:"hours",label:"الساعات السابقة",hint:"24"}]},
+ {id:"analytics_overview",service:"analytics",title:"تحليلات اللاعبين",description:"المستخدمون النشطون والجدد والجلسات والأحداث يومياً",args:[{key:"days",label:"عدد الأيام",hint:"7"}]},
+ {id:"analytics_top_events",service:"analytics",title:"أحداث اللعبة",description:"أكثر أحداث Firebase Analytics تكراراً",args:[{key:"days",label:"عدد الأيام",hint:"7"},{key:"limit",label:"العدد",hint:"20"}]},
+ {id:"analytics_app_versions",service:"analytics",title:"إصدارات اللعبة",description:"المستخدمون والأحداث حسب إصدار التطبيق",args:[{key:"days",label:"عدد الأيام",hint:"7"},{key:"limit",label:"العدد",hint:"20"}]},
  {id:"play_list_reviews",service:"play",title:"مراجعات Google Play",description:"استعراض تقييمات اللعبة",args:[]},
  {id:"play_list_one_time_products",service:"play",title:"منتجات الجواهر",description:"استعراض منتجات الشراء لمرة واحدة",args:[]},
  {id:"play_list_subscriptions",service:"play",title:"الاشتراكات",description:"استعراض اشتراكات اللعبة",args:[]},
@@ -165,6 +190,13 @@ export async function runReadTool(name:string,args:unknown,source:"dashboard"|"m
    case "gateway_status":output={readOnly:true,services:serviceIds.map(id=>({id,configured:credentialsReady(id)})),note:"Configuration is not proof of successful API connectivity"};break;
    case "tavily_search":output=await searchTavily(p.query);break;
    case "firebase_read":output=await firebaseRead(p.path,p.maxChildren);break;
+   case "crashlytics_list_reports":output=await crashlyticsListReports();break;
+   case "crashlytics_get_report":output=await crashlyticsGetReport(p);break;
+   case "crashlytics_get_issue":output=await crashlyticsGetIssue(p.issueId);break;
+   case "crashlytics_list_events":output=await crashlyticsListEvents(p);break;
+   case "analytics_overview":output=await analyticsReport("overview",p.days,90);break;
+   case "analytics_top_events":output=await analyticsReport("events",p.days,p.limit);break;
+   case "analytics_app_versions":output=await analyticsReport("versions",p.days,p.limit);break;
    case "play_list_reviews":output=await googleGet(`${playUrl()}/reviews`,await googleToken("play"),{maxResults:p.maxResults});break;
    case "play_list_one_time_products":output=await googleGet(`${playUrl()}/oneTimeProducts`,await googleToken("play"),{pageSize:p.pageSize});break;
    case "play_list_subscriptions":output=await googleGet(`${playUrl()}/subscriptions`,await googleToken("play"),{pageSize:p.pageSize});break;

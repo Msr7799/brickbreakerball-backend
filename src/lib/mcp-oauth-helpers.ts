@@ -1,6 +1,7 @@
 import {createHash,timingSafeEqual} from "node:crypto";
 
 export const OAUTH_SCOPE="mcp:read";
+export const OAUTH_WRITE_SCOPE="mcp:write";
 const DEFAULT_ORIGIN="https://brickbreakerball-backend.vercel.app";
 const CLIENT_ID_PATTERN=/^\/oauth\/(?:[A-Za-z0-9_-]+\/)?client\.json$/;
 const CALLBACK_PATTERN=/^\/connector\/oauth\/[A-Za-z0-9_-]+$/;
@@ -39,7 +40,7 @@ export function parseAuthorizationInput(params:URLSearchParams):AuthorizationInp
  const scope=params.has("scope")?read("scope"):OAUTH_SCOPE;
  if(!isChatGptClientId(clientId)||!isChatGptRedirect(redirectUri)||responseType!=="code"||method!=="S256"||
     !/^[A-Za-z0-9_-]{43}$/.test(challenge)||state.length<8||state.length>512||
-    scope!==OAUTH_SCOPE||resource!==oauthResource())throw new Error("Invalid OAuth request");
+    !([OAUTH_SCOPE,`${OAUTH_SCOPE} ${OAUTH_WRITE_SCOPE}`].includes(scope))||resource!==oauthResource())throw new Error("Invalid OAuth request");
  return {clientId,redirectUri,state,challenge,scope,resource};
 }
 /** Require a non-conflicting origin signal; missing/null Origin is permitted only

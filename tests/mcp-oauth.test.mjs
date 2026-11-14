@@ -26,7 +26,7 @@ test("client metadata matches exact client ID, redirect URI, and public-client t
  assert.equal(validateClientMetadata(clientId,redirectUri,{...ok,token_endpoint_auth_methods_supported:["private_key_jwt"]}),false);
 });
 test("authorization validates PKCE, resource audience, scope, and non-repeated fields",()=>{
- assert.equal(parseAuthorizationInput(params()).scope,OAUTH_SCOPE);
+ assert.equal(parseAuthorizationInput(params()).scope,OAUTH_SCOPE);\n const writeParams=params();writeParams.set("scope","mcp:read mcp:write");assert.equal(parseAuthorizationInput(writeParams).scope,"mcp:read mcp:write");
  const badResource=params();badResource.set("resource","https://another.example/api/mcp");assert.throws(()=>parseAuthorizationInput(badResource));
  const badScope=params();badScope.set("scope","mcp:write");assert.throws(()=>parseAuthorizationInput(badScope));
  const badMethod=params();badMethod.set("code_challenge_method","plain");assert.throws(()=>parseAuthorizationInput(badMethod));

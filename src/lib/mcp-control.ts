@@ -1,10 +1,10 @@
-/** Live, authenticated dashboard service probes and audited read-only tools. */
+/** Live authenticated dashboard probes, bounded management tools, and audit records. */
 import {googleGet,googleRequest,googleToken,oauthToken} from "./google";
 import {firebaseRead,firebaseProbe} from "./firebase";
 import {assertEnv,validateDateRange,dateObject,validateResource} from "./security";
 import {z} from "zod";
 import {searchTavily} from "./tavily";
-import {crashlyticsListReports,crashlyticsGetReport,crashlyticsGetIssue,crashlyticsListEvents,analyticsReport} from "./game-insights";
+import {crashlyticsListReports,crashlyticsGetReport,crashlyticsGetIssue,crashlyticsListEvents,analyticsReport,crashlyticsListNotes,crashlyticsUpdateIssue,crashlyticsCreateNote,crashlyticsDeleteNote,analyticsListKeyEvents,analyticsCreateKeyEvent,analyticsUpdateKeyEvent,analyticsDeleteKeyEvent} from "./game-insights";
 import type {Db} from "mongodb";
 
 const {db}=require("../../billing/lib/db.js") as {db:()=>Promise<Db>};
@@ -54,6 +54,11 @@ export async function writeAudit(input:{source:"mcp"|"dashboard";action:string;s
   const database=await db();
   await database.collection("mcp_audit").insertOne({at:new Date(),source:input.source,action:input.action,service:input.service||"gateway",success:input.success,durationMs:Math.round(input.durationMs),detail:(input.detail||"").slice(0,240)});
  }catch(e){console.warn("MCP audit unavailable",e instanceof Error?e.name:"unknown");}
+}
+/** Fail closed before Google mutations: a durable intent record is mandatory. */
+export async function recordMcpWriteIntent(action:string,subject:string,source:"mcp"|"dashboard"="mcp"){
+ const service=toolsMeta.find(t=>t.id===action)?.service||"gateway";
+ await (await db()).collection("mcp_audit").insertOne({at:new Date(),source,action,service,success:false,durationMs:0,detail:`Authorized write intent (pending): ${subject.slice(0,100)}`});
 }
 export async function latestActivity(limit=30){
  const database=await db();
@@ -152,10 +157,18 @@ const toolSchemas={
  analytics_overview:z.object({days:z.coerce.number().int().min(1).max(90).default(7)}),
  analytics_top_events:z.object({days:z.coerce.number().int().min(1).max(90).default(7),limit:z.coerce.number().int().min(1).max(100).default(20)}),
  analytics_app_versions:z.object({days:z.coerce.number().int().min(1).max(90).default(7),limit:z.coerce.number().int().min(1).max(100).default(20)}),
+ crashlytics_list_notes:z.object({issueId:z.string().min(1).max(120),pageSize:z.coerce.number().int().min(1).max(100).default(30)}),
+ crashlytics_update_issue:z.object({issueId:z.string().min(1).max(120),state:z.enum(["OPEN","CLOSED","MUTED"]),confirm:z.literal("CONFIRM")}),
+ crashlytics_create_note:z.object({issueId:z.string().min(1).max(120),body:z.string().trim().min(1).max(3000),confirm:z.literal("CONFIRM")}),
+ crashlytics_delete_note:z.object({issueId:z.string().min(1).max(120),noteId:z.string().min(1).max(120),confirm:z.literal("CONFIRM")}),
+ analytics_list_key_events:z.object({pageSize:z.coerce.number().int().min(1).max(200).default(50)}),
+ analytics_create_key_event:z.object({eventName:z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,39}$/),countingMethod:z.enum(["ONCE_PER_EVENT","ONCE_PER_SESSION"]),confirm:z.literal("CONFIRM")}),
+ analytics_update_key_event:z.object({keyEventId:z.string().min(1).max(120),countingMethod:z.enum(["ONCE_PER_EVENT","ONCE_PER_SESSION"]),confirm:z.literal("CONFIRM")}),
+ analytics_delete_key_event:z.object({keyEventId:z.string().min(1).max(120),confirm:z.literal("CONFIRM")}),
  adsense_list_accounts:z.object({}),adsense_list_sites:z.object({account}),adsense_report:z.object({account,dateRange:z.enum(["TODAY","YESTERDAY","LAST_7_DAYS","LAST_30_DAYS","MONTH_TO_DATE"]).default("LAST_7_DAYS")})
 } as const;
 export type ToolId=keyof typeof toolSchemas;
-export const toolsMeta:{id:ToolId;service:ServiceId;title:string;description:string;args:{key:string;label:string;hint?:string}[]}[]=[
+export const toolsMeta:{id:ToolId;service:ServiceId;title:string;description:string;mode?:"write";args:{key:string;label:string;hint?:string}[]}[]=[
  {id:"tavily_search",service:"tavily",title:"بحث Tavily",description:"بحث ويب مباشر مع روابط المصادر",args:[{key:"query",label:"عبارة البحث",hint:"اكتب ما تريد البحث عنه"}]},
  {id:"gateway_status",service:"vercel",title:"حالة بوابة MCP",description:"يعرض التهيئة من غير أي أسرار",args:[]},
  {id:"firebase_read",service:"firebase",title:"قراءة Firebase",description:"قراءة محدودة من المسار المسموح فقط",args:[{key:"path",label:"المسار",hint:"/mcp"},{key:"maxChildren",label:"أقصى عدد",hint:"20"}]},
@@ -166,6 +179,14 @@ export const toolsMeta:{id:ToolId;service:ServiceId;title:string;description:str
  {id:"analytics_overview",service:"analytics",title:"تحليلات اللاعبين",description:"المستخدمون النشطون والجدد والجلسات والأحداث يومياً",args:[{key:"days",label:"عدد الأيام",hint:"7"}]},
  {id:"analytics_top_events",service:"analytics",title:"أحداث اللعبة",description:"أكثر أحداث Firebase Analytics تكراراً",args:[{key:"days",label:"عدد الأيام",hint:"7"},{key:"limit",label:"العدد",hint:"20"}]},
  {id:"analytics_app_versions",service:"analytics",title:"إصدارات اللعبة",description:"المستخدمون والأحداث حسب إصدار التطبيق",args:[{key:"days",label:"عدد الأيام",hint:"7"},{key:"limit",label:"العدد",hint:"20"}]},
+ {id:"crashlytics_list_notes",service:"crashlytics",title:"ملاحظات الأعطال",description:"عرض الملاحظات الموجودة على العطل",args:[{key:"issueId",label:"معرّف العطل"}]},
+ {id:"crashlytics_update_issue",service:"crashlytics",mode:"write",title:"تغيير حالة العطل",description:"فتح / إغلاق / كتم العطل — يحتاج تأكيد",args:[{key:"issueId",label:"معرّف العطل"},{key:"state",label:"الحالة",hint:"CLOSED"},{key:"confirm",label:"اكتب CONFIRM للتأكيد"}]},
+ {id:"crashlytics_create_note",service:"crashlytics",mode:"write",title:"إضافة ملاحظة للعطل",description:"إضافة ملاحظة رسمية على بلاغ العطل",args:[{key:"issueId",label:"معرّف العطل"},{key:"body",label:"نص الملاحظة"},{key:"confirm",label:"اكتب CONFIRM للتأكيد"}]},
+ {id:"crashlytics_delete_note",service:"crashlytics",mode:"write",title:"حذف ملاحظة",description:"حذف ملاحظة Crashlytics نهائياً",args:[{key:"issueId",label:"معرّف العطل"},{key:"noteId",label:"معرّف الملاحظة"},{key:"confirm",label:"اكتب CONFIRM للتأكيد"}]},
+ {id:"analytics_list_key_events",service:"analytics",title:"الأحداث المهمة GA4",description:"عرض Key Events الحالية",args:[]},
+ {id:"analytics_create_key_event",service:"analytics",mode:"write",title:"إنشاء حدث مهم",description:"إضافة Key Event لخاصية GA4 كلها",args:[{key:"eventName",label:"اسم الحدث",hint:"level_complete"},{key:"countingMethod",label:"طريقة العد",hint:"ONCE_PER_EVENT"},{key:"confirm",label:"اكتب CONFIRM للتأكيد"}]},
+ {id:"analytics_update_key_event",service:"analytics",mode:"write",title:"تعديل طريقة العد",description:"تغيير طريقة عد Key Event",args:[{key:"keyEventId",label:"معرّف Key Event"},{key:"countingMethod",label:"طريقة العد",hint:"ONCE_PER_SESSION"},{key:"confirm",label:"اكتب CONFIRM للتأكيد"}]},
+ {id:"analytics_delete_key_event",service:"analytics",mode:"write",title:"حذف حدث مهم",description:"حذف Key Event على مستوى خاصية GA4",args:[{key:"keyEventId",label:"معرّف Key Event"},{key:"confirm",label:"اكتب CONFIRM للتأكيد"}]},
  {id:"play_list_reviews",service:"play",title:"مراجعات Google Play",description:"استعراض تقييمات اللعبة",args:[]},
  {id:"play_list_one_time_products",service:"play",title:"منتجات الجواهر",description:"استعراض منتجات الشراء لمرة واحدة",args:[]},
  {id:"play_list_subscriptions",service:"play",title:"الاشتراكات",description:"استعراض اشتراكات اللعبة",args:[]},
@@ -185,6 +206,13 @@ export async function runReadTool(name:string,args:unknown,source:"dashboard"|"m
  const schema=toolSchemas[name as ToolId];if(!schema)throw new Error("Unknown or disabled MCP tool");
  try{
   const p=schema.parse(args??{}) as Record<string,any>;
+  const isWrite=toolsMeta.find(t=>t.id===name)?.mode==="write";
+  if(isWrite){
+   if(process.env.MCP_WRITE_ENABLED!=="true")throw new Error("MCP write operations are disabled by MCP_WRITE_ENABLED");
+   // This entrypoint is restricted to an authenticated, same-origin admin dashboard.
+   if(p.confirm!=="CONFIRM")throw new Error("Explicit CONFIRM is required");
+   await recordMcpWriteIntent(name,JSON.stringify(Object.fromEntries(Object.entries(p).filter(([key])=>!["body","confirm"].includes(key)))).slice(0,120),source);
+  }
   let output:unknown;
   switch(name){
    case "gateway_status":output={readOnly:true,services:serviceIds.map(id=>({id,configured:credentialsReady(id)})),note:"Configuration is not proof of successful API connectivity"};break;
@@ -197,6 +225,14 @@ export async function runReadTool(name:string,args:unknown,source:"dashboard"|"m
    case "analytics_overview":output=await analyticsReport("overview",p.days,90);break;
    case "analytics_top_events":output=await analyticsReport("events",p.days,p.limit);break;
    case "analytics_app_versions":output=await analyticsReport("versions",p.days,p.limit);break;
+   case "crashlytics_list_notes":output=await crashlyticsListNotes(p.issueId,p.pageSize);break;
+   case "crashlytics_update_issue":output=await crashlyticsUpdateIssue(p.issueId,p.state);break;
+   case "crashlytics_create_note":output=await crashlyticsCreateNote(p.issueId,p.body);break;
+   case "crashlytics_delete_note":output=await crashlyticsDeleteNote(p.issueId,p.noteId);break;
+   case "analytics_list_key_events":output=await analyticsListKeyEvents(p.pageSize);break;
+   case "analytics_create_key_event":output=await analyticsCreateKeyEvent(p.eventName,p.countingMethod);break;
+   case "analytics_update_key_event":output=await analyticsUpdateKeyEvent(p.keyEventId,p.countingMethod);break;
+   case "analytics_delete_key_event":output=await analyticsDeleteKeyEvent(p.keyEventId);break;
    case "play_list_reviews":output=await googleGet(`${playUrl()}/reviews`,await googleToken("play"),{maxResults:p.maxResults});break;
    case "play_list_one_time_products":output=await googleGet(`${playUrl()}/oneTimeProducts`,await googleToken("play"),{pageSize:p.pageSize});break;
    case "play_list_subscriptions":output=await googleGet(`${playUrl()}/subscriptions`,await googleToken("play"),{pageSize:p.pageSize});break;
@@ -211,8 +247,8 @@ export async function runReadTool(name:string,args:unknown,source:"dashboard"|"m
    case "adsense_list_sites":output=await googleGet(`https://adsense.googleapis.com/v2/${validateResource("adsense",p.account)}/sites`,await oauthToken("adsense"),{pageSize:100});break;
    case "adsense_report":{const u=new URL(`https://adsense.googleapis.com/v2/${validateResource("adsense",p.account)}/reports:generate`);u.searchParams.set("dateRange",p.dateRange);["ESTIMATED_EARNINGS","CLICKS","IMPRESSIONS"].forEach(m=>u.searchParams.append("metrics[]",m));u.searchParams.append("dimensions[]","DATE");output=await googleGet(u.toString(),await oauthToken("adsense"));break;}
   }
-  await writeAudit({source,action:name,service:toolsMeta.find(t=>t.id===name)?.service,success:true,durationMs:Date.now()-started,detail:"Read-only operation completed"});
-  return output;
+  await writeAudit({source,action:name,service:toolsMeta.find(t=>t.id===name)?.service,success:true,durationMs:Date.now()-started,detail:isWrite?"Admin-approved write completed":"Read-only operation completed"});
+  return output??{};
  }catch(err){await writeAudit({source,action:name,service:toolsMeta.find(t=>t.id===name)?.service,success:false,durationMs:Date.now()-started,detail:humanError(err)});throw err;}
 }
 export {humanError};

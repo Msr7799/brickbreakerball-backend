@@ -32,7 +32,7 @@ export async function oauthToken(service:"admob"|"adsense"):Promise<string> {
 export async function googleGet(endpoint:string,token:string,params?:Record<string,string|number|undefined>):Promise<unknown>{
  return googleRequest(endpoint,token,"GET",undefined,params);
 }
-export async function googleRequest(endpoint:string,token:string,method:"GET"|"POST",body?:unknown,params?:Record<string,string|number|undefined>):Promise<unknown>{
+export async function googleRequest(endpoint:string,token:string,method:"GET"|"POST"|"PATCH"|"DELETE",body?:unknown,params?:Record<string,string|number|undefined>):Promise<unknown>{
  const url=new URL(endpoint);
  if(url.protocol!=="https:"||!url.hostname.endsWith(".googleapis.com"))throw new Error("Disallowed Google API host");
  for(const [k,v] of Object.entries(params||{})){if(v!==undefined)url.searchParams.set(k,String(v));}

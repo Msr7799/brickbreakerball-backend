@@ -88,15 +88,16 @@ export async function refreshAccess(params:URLSearchParams):Promise<Record<strin
  });
  return record?mintTokens(record):null;
 }
-export async function verifyMcpOauthAccess(token:string|null):Promise<boolean>{
+export async function verifyMcpOauthAccess(token:string|null,requiredScope:"mcp:read"|"mcp:write"="mcp:read"):Promise<boolean>{
  if(!oauthEnabled()||!token||!/^[A-Za-z0-9_-]{43}$/.test(token))return false;
  const row=await (await db()).collection<OAuthToken>("mcp_oauth_tokens").findOne({
-  _id:"a:"+sha256(token),type:"access",scope:OAUTH_SCOPE,resource:oauthResource(),expiresAt:{$gt:new Date()}
+  _id:"a:"+sha256(token),type:"access",resource:oauthResource(),expiresAt:{$gt:new Date()}
  });
- return !!row;
+ return !!row&&row.scope.split(/\s+/).includes(requiredScope);
 }
 export function oauthChallenge():string{
- return 'Bearer resource_metadata="'+oauthOrigin()+'/.well-known/oauth-protected-resource", scope="'+OAUTH_SCOPE+'"';
+ const scopes=process.env.MCP_WRITE_ENABLED==="true"?`${OAUTH_SCOPE} mcp:write`:OAUTH_SCOPE;
+ return 'Bearer resource_metadata="'+oauthOrigin()+'/.well-known/oauth-protected-resource", scope="'+scopes+'"';
 }
 export function safeOauthResponse(data:Record<string,unknown>):Response{
  return Response.json(data,{headers:{...oauthHeaders,"Pragma":"no-cache"}});

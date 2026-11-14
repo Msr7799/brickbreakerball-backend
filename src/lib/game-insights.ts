@@ -92,7 +92,9 @@ async function analyticsContext():Promise<{propertyId:string;streamId?:string}>{
  if(!/^\d{5,30}$/.test(id))throw new Error("GA4 property not linked or GA4_PROPERTY_ID is invalid");
  const app=await androidAppId();
  const mapping=details.streamMappings?.find(x=>x.app?.endsWith(`/androidApps/${app}`));
- return {propertyId:id,streamId:mapping?.streamId};
+ const streamId=process.env.GA4_ANDROID_STREAM_ID||mapping?.streamId;
+ if(!streamId||!/^\d{1,30}$/.test(streamId))throw new Error("GA4 Android stream not found. Set GA4_ANDROID_STREAM_ID to avoid mixing other app data.");
+ return {propertyId:id,streamId};
 }
 /** Restrict Data API queries to the Firebase Android stream where mapping is available. */
 export async function analyticsReport(kind:"overview"|"events"|"versions",days:number,limit=20){

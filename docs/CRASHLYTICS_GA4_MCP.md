@@ -1,6 +1,6 @@
-# Crashlytics + GA4 for ForgePulse MCP
+# Crashlytics + GA4 for ForgePulse MCP\n\nFor the approved administrative tools added later, see [MCP_WRITE_ADMIN.md](MCP_WRITE_ADMIN.md).
 
-The seven new MCP tools are **read-only** and reuse `mcp:read`, ForgePulse dashboard login, the MCP tool allowlist, and MongoDB `mcp_audit` logging.
+The seven original MCP insights tools are **read-only** and reuse `mcp:read`, ForgePulse dashboard login, the MCP tool allowlist, and MongoDB `mcp_audit` logging.
 
 ## Crashlytics tools
 - `crashlytics_list_reports`: list supported reports and their exact `reportId` names.

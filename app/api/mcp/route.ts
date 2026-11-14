@@ -6,6 +6,7 @@ import {googleGet,googleRequest,googleToken,oauthToken} from "../../../src/lib/g
 import {writeAudit,toolsMeta} from "../../../src/lib/mcp-control";
 import {getAssistantSettings,allowedTool} from "../../../src/lib/assistant-settings";
 import {searchTavily} from "../../../src/lib/tavily";
+import {crashlyticsListReports,crashlyticsGetReport,crashlyticsGetIssue,crashlyticsListEvents,analyticsReport} from "../../../src/lib/game-insights";
 import {oauthEnabled} from "../../../src/lib/mcp-oauth-helpers";
 import {verifyMcpOauthAccess,oauthChallenge} from "../../../src/lib/mcp-oauth";
 
@@ -27,6 +28,9 @@ const result=async(name:string,fn:()=>Promise<unknown>)=>{
 };
 const date=z.string().regex(/^\d{4}-\d{2}-\d{2}$/,"Use YYYY-MM-DD");
 const account=z.string().regex(/^accounts\/pub-\d{10,20}$/);
+const hours=z.number().int().min(1).max(2160).default(24);
+const days=z.number().int().min(1).max(90).default(7);
+const version=z.string().max(80).optional();
 const handler=createMcpHandler((server)=>{
  server.registerTool("tavily_search",{description:"Search the web with Tavily and return source URLs. Read-only; uses Tavily credits.",_meta:{securitySchemes:[{type:"oauth2",scopes:["mcp:read"]}]},inputSchema:z.object({query:z.string().min(3).max(500)})},async({query})=>result("tavily_search",()=>searchTavily(query)));
  server.registerTool("gateway_status",{description:"Show which of the five providers have their required settings configured. No secret values are returned.",_meta:{securitySchemes:[{type:"oauth2",scopes:["mcp:read"]}]},inputSchema:z.object({})},async()=>result("gateway_status",async()=>({
@@ -37,10 +41,20 @@ const handler=createMcpHandler((server)=>{
   admob:!!((process.env.GOOGLE_ADMOB_REFRESH_TOKEN||process.env.GOOGLE_OAUTH_REFRESH_TOKEN)&&process.env.GOOGLE_OAUTH_CLIENT_ID&&process.env.GOOGLE_OAUTH_CLIENT_SECRET),
   adsense:!!((process.env.GOOGLE_ADSENSE_REFRESH_TOKEN||process.env.GOOGLE_OAUTH_REFRESH_TOKEN)&&process.env.GOOGLE_OAUTH_CLIENT_ID&&process.env.GOOGLE_OAUTH_CLIENT_SECRET),
   tavily:!!process.env.TAVILY_API_KEY,
+  crashlytics:!!((process.env.FIREBASE_SERVICE_ACCOUNT_JSON||process.env.GOOGLE_SERVICE_ACCOUNT_JSON)&&process.env.ANDROID_PACKAGE_NAME),
+  analytics:!!((process.env.FIREBASE_SERVICE_ACCOUNT_JSON||process.env.GOOGLE_SERVICE_ACCOUNT_JSON)&&process.env.ANDROID_PACKAGE_NAME),
   note:"Configured does not guarantee Google granted API access. Run account-list tools to verify."
  })));
 
  server.registerTool("firebase_read",{description:"Read a bounded Firebase Realtime Database subtree. Restricted to FIREBASE_ALLOWED_PREFIX; read-only.",_meta:{securitySchemes:[{type:"oauth2",scopes:["mcp:read"]}]},inputSchema:z.object({path:z.string().min(1).default("/mcp"),maxChildren:z.number().int().min(1).max(100).default(20)})},async({path,maxChildren})=>result("firebase_read",()=>firebaseRead(path,maxChildren)));
+
+ server.registerTool("crashlytics_list_reports",{description:"List available Firebase Crashlytics reports for the configured Android app (read-only).",_meta:{securitySchemes:[{type:"oauth2",scopes:["mcp:read"]}]},inputSchema:z.object({})},async()=>result("crashlytics_list_reports",()=>crashlyticsListReports()));
+ server.registerTool("crashlytics_get_report",{description:"Read a Crashlytics report filtered by last N hours and optional version (e.g. 2.9.0 (26)). First list report names with crashlytics_list_reports.",_meta:{securitySchemes:[{type:"oauth2",scopes:["mcp:read"]}]},inputSchema:z.object({reportId:z.string().min(1).max(120),hours,version,pageSize:z.number().int().min(1).max(100).default(25),pageToken:z.string().max(1200).optional()})},async(p)=>result("crashlytics_get_report",()=>crashlyticsGetReport(p)));
+ server.registerTool("crashlytics_get_issue",{description:"Read one Crashlytics issue by ID (read-only).",_meta:{securitySchemes:[{type:"oauth2",scopes:["mcp:read"]}]},inputSchema:z.object({issueId:z.string().min(1).max(120)})},async({issueId})=>result("crashlytics_get_issue",()=>crashlyticsGetIssue(issueId)));
+ server.registerTool("crashlytics_list_events",{description:"List recent events for a Crashlytics issue, limited by hours and app version.",_meta:{securitySchemes:[{type:"oauth2",scopes:["mcp:read"]}]},inputSchema:z.object({issueId:z.string().min(1).max(120),hours,version,pageSize:z.number().int().min(1).max(100).default(10),pageToken:z.string().max(1200).optional()})},async(p)=>result("crashlytics_list_events",()=>crashlyticsListEvents(p)));
+ server.registerTool("analytics_overview",{description:"GA4 active/new users, sessions and event counts per day for the Firebase Android app.",_meta:{securitySchemes:[{type:"oauth2",scopes:["mcp:read"]}]},inputSchema:z.object({days})},async({days})=>result("analytics_overview",()=>analyticsReport("overview",days,90)));
+ server.registerTool("analytics_top_events",{description:"List most frequent Firebase Analytics game events and active users.",_meta:{securitySchemes:[{type:"oauth2",scopes:["mcp:read"]}]},inputSchema:z.object({days,limit:z.number().int().min(1).max(100).default(20)})},async({days,limit})=>result("analytics_top_events",()=>analyticsReport("events",days,limit)));
+ server.registerTool("analytics_app_versions",{description:"Analyze users and events by Android game app version.",_meta:{securitySchemes:[{type:"oauth2",scopes:["mcp:read"]}]},inputSchema:z.object({days,limit:z.number().int().min(1).max(100).default(20)})},async({days,limit})=>result("analytics_app_versions",()=>analyticsReport("versions",days,limit)));
 
  server.registerTool("play_list_reviews",{description:"Read Google Play app reviews for configured ANDROID_PACKAGE_NAME.",_meta:{securitySchemes:[{type:"oauth2",scopes:["mcp:read"]}]},inputSchema:z.object({maxResults:z.number().int().min(1).max(100).default(20),pageToken:z.string().max(1000).optional()})},async({maxResults,pageToken})=>result("play_list_reviews",async()=>googleGet(`${playRoot()}/reviews`,await googleToken("play"),{maxResults,token:pageToken})));
  server.registerTool("play_list_one_time_products",{description:"List one-time in-app purchases (such as gem packs) on Google Play, including product setup.",_meta:{securitySchemes:[{type:"oauth2",scopes:["mcp:read"]}]},inputSchema:z.object({pageSize:z.number().int().min(1).max(100).default(50),pageToken:z.string().max(1000).optional()})},async({pageSize,pageToken})=>result("play_list_one_time_products",async()=>googleGet(`${playRoot()}/oneTimeProducts`,await googleToken("play"),{pageSize,pageToken})));

@@ -13,7 +13,7 @@ const navItems:{id:Tab;label:string;glyph:string}[]=[
  {id:"checks",label:"التأكيدات",glyph:"✓"},{id:"activity",label:"سجل النشاط",glyph:"▤"},{id:"reports",label:"التقارير",glyph:"▥"},{id:"settings",label:"الإعدادات",glyph:"⚙"}
 ];
 const providerStyle:Record<string,{glyph:string;color:string;short:string}>={
- firebase:{glyph:"🔥",color:"#f7b431",short:"Firebase"},cloud:{glyph:"☁",color:"#4285f4",short:"Cloud"},play:{glyph:"▶",color:"#23a977",short:"Play RTDN"},tavily:{glyph:"⌕",color:"#577e54",short:"Tavily"},
+ firebase:{glyph:"🔥",color:"#f7b431",short:"Firebase"},crashlytics:{glyph:"💥",color:"#d45f38",short:"Crashlytics"},analytics:{glyph:"📊",color:"#e69f27",short:"GA4"},cloud:{glyph:"☁",color:"#4285f4",short:"Cloud"},play:{glyph:"▶",color:"#23a977",short:"Play RTDN"},tavily:{glyph:"⌕",color:"#577e54",short:"Tavily"},
  admob:{glyph:"◕",color:"#fb7466",short:"AdMob"},adsense:{glyph:"◈",color:"#eaac3e",short:"AdSense"},mongodb:{glyph:"❧",color:"#3ca970",short:"MongoDB"},vercel:{glyph:"▲",color:"#202522",short:"Vercel"}
 };
 const tabHeading:Record<Tab,[string,string]>={

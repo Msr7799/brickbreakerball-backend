@@ -1,4 +1,5 @@
 import {createMcpHandler} from "mcp-handler";
+import {AsyncLocalStorage} from "node:async_hooks";
 import {z} from "zod";
 import {getBearer,tokenMatches,assertEnv,validateDateRange,dateObject,validateResource} from "../../../src/lib/security";
 import {firebaseRead} from "../../../src/lib/firebase";
@@ -6,7 +7,7 @@ import {googleGet,googleRequest,googleToken,oauthToken} from "../../../src/lib/g
 import {writeAudit,toolsMeta} from "../../../src/lib/mcp-control";
 import {getAssistantSettings,allowedTool} from "../../../src/lib/assistant-settings";
 import {searchTavily} from "../../../src/lib/tavily";
-import {crashlyticsListReports,crashlyticsGetReport,crashlyticsGetIssue,crashlyticsListEvents,analyticsReport} from "../../../src/lib/game-insights";
+import {crashlyticsListReports,crashlyticsGetReport,crashlyticsGetIssue,crashlyticsListEvents,analyticsReport,crashlyticsListNotes,crashlyticsUpdateIssue,crashlyticsCreateNote,crashlyticsDeleteNote,analyticsListKeyEvents,analyticsCreateKeyEvent,analyticsUpdateKeyEvent,analyticsDeleteKeyEvent} from "../../../src/lib/game-insights";
 import {oauthEnabled} from "../../../src/lib/mcp-oauth-helpers";
 import {verifyMcpOauthAccess,oauthChallenge} from "../../../src/lib/mcp-oauth";
 
@@ -18,10 +19,16 @@ const cloud=()=>assertEnv("GOOGLE_CLOUD_PROJECT_ID");
 const appId=()=>assertEnv("ANDROID_PACKAGE_NAME");
 const playRoot=()=>`https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${encodeURIComponent(appId())}`;
 const pubsubRoot=()=>`https://pubsub.googleapis.com/v1/projects/${encodeURIComponent(cloud())}`;
-const result=async(name:string,fn:()=>Promise<unknown>)=>{
+const writeContext=new AsyncLocalStorage<boolean>();
+const result=async(name:string,fn:()=>Promise<unknown>,write=false,subject="")=>{
  const started=Date.now();
- try{const settings=await getAssistantSettings();if(!allowedTool(name,settings))throw new Error("This MCP tool is disabled in ForgePulse controls.");const value=await fn();const data=JSON.stringify(value,null,2);
-  await writeAudit({source:"mcp",action:name,service:toolsMeta.find(t=>t.id===name)?.service,success:true,durationMs:Date.now()-started,detail:"Read-only operation completed"});
+ try{const settings=await getAssistantSettings();if(!allowedTool(name,settings))throw new Error("This MCP tool is disabled in ForgePulse controls.");
+  if(write){if(process.env.MCP_WRITE_ENABLED!=="true"||writeContext.getStore()!==true)throw new Error("Write operation requires explicit mcp:write OAuth approval and MCP_WRITE_ENABLED=true");
+   // Fail closed: persist write intent before calling an external Google mutation.
+   const {recordMcpWriteIntent}=await import("../../../src/lib/mcp-control");await recordMcpWriteIntent(name,subject);
+  }
+  const value=await fn();const data=JSON.stringify(value??{},null,2);
+  await writeAudit({source:"mcp",action:name,service:toolsMeta.find(t=>t.id===name)?.service,success:true,durationMs:Date.now()-started,detail:write?`Write completed: ${subject}`:"Read-only operation completed"});
   return {content:[{type:"text" as const,text:data.length>40000?data.slice(0,40000)+"\n[TRUNCATED]":data}]};}
  catch(e){await writeAudit({source:"mcp",action:name,service:toolsMeta.find(t=>t.id===name)?.service,success:false,durationMs:Date.now()-started,detail:e instanceof Error?e.name:"Unknown error"});
   return {isError:true,content:[{type:"text" as const,text:e instanceof Error?e.message:"Unknown error"}]};}
@@ -34,7 +41,8 @@ const version=z.string().max(80).optional();
 const handler=createMcpHandler((server)=>{
  server.registerTool("tavily_search",{description:"Search the web with Tavily and return source URLs. Read-only; uses Tavily credits.",_meta:{securitySchemes:[{type:"oauth2",scopes:["mcp:read"]}]},inputSchema:z.object({query:z.string().min(3).max(500)})},async({query})=>result("tavily_search",()=>searchTavily(query)));
  server.registerTool("gateway_status",{description:"Show which of the five providers have their required settings configured. No secret values are returned.",_meta:{securitySchemes:[{type:"oauth2",scopes:["mcp:read"]}]},inputSchema:z.object({})},async()=>result("gateway_status",async()=>({
-  readOnly:true,
+  readOnly:process.env.MCP_WRITE_ENABLED!=="true",
+  writeEnabled:process.env.MCP_WRITE_ENABLED==="true",
   firebase:!!(process.env.FIREBASE_DATABASE_URL&&(process.env.FIREBASE_SERVICE_ACCOUNT_JSON||process.env.GOOGLE_SERVICE_ACCOUNT_JSON)),
   play:!!(process.env.GOOGLE_SERVICE_ACCOUNT_JSON&&process.env.ANDROID_PACKAGE_NAME),
   cloud:!!(process.env.GOOGLE_SERVICE_ACCOUNT_JSON&&process.env.GOOGLE_CLOUD_PROJECT_ID),
@@ -55,6 +63,21 @@ const handler=createMcpHandler((server)=>{
  server.registerTool("analytics_overview",{description:"GA4 active/new users, sessions and event counts per day for the Firebase Android app.",_meta:{securitySchemes:[{type:"oauth2",scopes:["mcp:read"]}]},inputSchema:z.object({days})},async({days})=>result("analytics_overview",()=>analyticsReport("overview",days,90)));
  server.registerTool("analytics_top_events",{description:"List most frequent Firebase Analytics game events and active users.",_meta:{securitySchemes:[{type:"oauth2",scopes:["mcp:read"]}]},inputSchema:z.object({days,limit:z.number().int().min(1).max(100).default(20)})},async({days,limit})=>result("analytics_top_events",()=>analyticsReport("events",days,limit)));
  server.registerTool("analytics_app_versions",{description:"Analyze users and events by Android game app version.",_meta:{securitySchemes:[{type:"oauth2",scopes:["mcp:read"]}]},inputSchema:z.object({days,limit:z.number().int().min(1).max(100).default(20)})},async({days,limit})=>result("analytics_app_versions",()=>analyticsReport("versions",days,limit)));
+ const writeMeta={securitySchemes:[{type:"oauth2" as const,scopes:["mcp:write"]}]};
+ const confirmation=z.literal(true).describe("Must be true only after explicit user approval of this exact change");
+ const issueId=z.string().min(1).max(120).regex(/^[a-zA-Z0-9_-]+$/);
+ const noteId=z.string().min(1).max(120).regex(/^[a-zA-Z0-9_-]+$/);
+ const keyEventId=z.string().min(1).max(120).regex(/^[a-zA-Z0-9_-]+$/);
+ const countingMethod=z.enum(["ONCE_PER_EVENT","ONCE_PER_SESSION"]);
+ server.registerTool("crashlytics_list_notes",{description:"List existing notes for a Crashlytics issue (read-only).",_meta:{securitySchemes:[{type:"oauth2",scopes:["mcp:read"]}]},inputSchema:z.object({issueId,pageSize:z.number().int().min(1).max(100).default(30)})},async({issueId,pageSize})=>result("crashlytics_list_notes",()=>crashlyticsListNotes(issueId,pageSize)));
+ server.registerTool("crashlytics_update_issue",{description:"WRITE: change the state of a Crashlytics issue (OPEN, CLOSED, MUTED) after explicit user approval. Does not repair app code.",_meta:writeMeta,inputSchema:z.object({issueId,state:z.enum(["OPEN","CLOSED","MUTED"]),confirm:confirmation})},async({issueId,state})=>result("crashlytics_update_issue",()=>crashlyticsUpdateIssue(issueId,state),true,`issue ${issueId} -> ${state}`));
+ server.registerTool("crashlytics_create_note",{description:"WRITE: add a developer note to one Crashlytics issue, only with explicit user approval.",_meta:writeMeta,inputSchema:z.object({issueId,body:z.string().trim().min(1).max(3000),confirm:confirmation})},async({issueId,body})=>result("crashlytics_create_note",()=>crashlyticsCreateNote(issueId,body),true,`issue ${issueId} note added`));
+ server.registerTool("crashlytics_delete_note",{description:"WRITE/DELETE: permanently delete one Crashlytics issue note only after explicit user approval.",_meta:writeMeta,inputSchema:z.object({issueId,noteId,confirm:confirmation})},async({issueId,noteId})=>result("crashlytics_delete_note",()=>crashlyticsDeleteNote(issueId,noteId),true,`issue ${issueId} note ${noteId} removed`));
+ server.registerTool("analytics_list_key_events",{description:"List GA4 Key Events configured for the Firebase-linked property (read-only).",_meta:{securitySchemes:[{type:"oauth2",scopes:["mcp:read"]}]},inputSchema:z.object({pageSize:z.number().int().min(1).max(200).default(50)})},async({pageSize})=>result("analytics_list_key_events",()=>analyticsListKeyEvents(pageSize)));
+ server.registerTool("analytics_create_key_event",{description:"WRITE: create a GA4 Key Event for the ENTIRE Firebase-linked GA4 property (not only one Android stream). Ask for explicit approval.",_meta:writeMeta,inputSchema:z.object({eventName:z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,39}$/),countingMethod,confirm:confirmation})},async({eventName,countingMethod})=>result("analytics_create_key_event",()=>analyticsCreateKeyEvent(eventName,countingMethod),true,`GA4 key event created: ${eventName}`));
+ server.registerTool("analytics_update_key_event",{description:"WRITE: change counting method for one GA4 Key Event across the entire property, after approval.",_meta:writeMeta,inputSchema:z.object({keyEventId,countingMethod,confirm:confirmation})},async({keyEventId,countingMethod})=>result("analytics_update_key_event",()=>analyticsUpdateKeyEvent(keyEventId,countingMethod),true,`GA4 key event ${keyEventId} -> ${countingMethod}`));
+ server.registerTool("analytics_delete_key_event",{description:"WRITE/DELETE: remove one GA4 Key Event from the whole property, only with explicit user approval.",_meta:writeMeta,inputSchema:z.object({keyEventId,confirm:confirmation})},async({keyEventId})=>result("analytics_delete_key_event",()=>analyticsDeleteKeyEvent(keyEventId),true,`GA4 key event ${keyEventId} deleted`));
+
 
  server.registerTool("play_list_reviews",{description:"Read Google Play app reviews for configured ANDROID_PACKAGE_NAME.",_meta:{securitySchemes:[{type:"oauth2",scopes:["mcp:read"]}]},inputSchema:z.object({maxResults:z.number().int().min(1).max(100).default(20),pageToken:z.string().max(1000).optional()})},async({maxResults,pageToken})=>result("play_list_reviews",async()=>googleGet(`${playRoot()}/reviews`,await googleToken("play"),{maxResults,token:pageToken})));
  server.registerTool("play_list_one_time_products",{description:"List one-time in-app purchases (such as gem packs) on Google Play, including product setup.",_meta:{securitySchemes:[{type:"oauth2",scopes:["mcp:read"]}]},inputSchema:z.object({pageSize:z.number().int().min(1).max(100).default(50),pageToken:z.string().max(1000).optional()})},async({pageSize,pageToken})=>result("play_list_one_time_products",async()=>googleGet(`${playRoot()}/oneTimeProducts`,await googleToken("play"),{pageSize,pageToken})));
@@ -86,7 +109,7 @@ async function authorized(request:Request):Promise<Response>{
  if(!legacyAuth&&oauthEnabled())try{oauthAuth=await verifyMcpOauthAccess(bearer);}catch{return Response.json({error:"OAuth token verification unavailable"},{status:503});}
  if(!legacyAuth&&!oauthAuth)return Response.json({error:"Unauthorized"},{status:401,headers:{"WWW-Authenticate":oauthEnabled()?oauthChallenge():"Bearer"}});
  try{const settings=await getAssistantSettings();if(!settings.enabled||!settings.mcpEnabled)return Response.json({error:"MCP is disabled in ForgePulse controls"},{status:503});}catch{return Response.json({error:"MCP settings unavailable"},{status:503});}
- try{return await handler(request);}catch{return Response.json({error:"MCP handler failed. Check deployment logs."},{status:500});}
+ try{const writeAllowed=!legacyAuth&&oauthAuth&&await verifyMcpOauthAccess(bearer,"mcp:write");return await writeContext.run(writeAllowed,()=>handler(request));}catch{return Response.json({error:"MCP handler failed. Check deployment logs."},{status:500});}
 }
 export const POST=authorized;
 export const GET=authorized;

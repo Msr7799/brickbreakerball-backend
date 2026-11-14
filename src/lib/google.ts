@@ -37,7 +37,10 @@ export async function googleRequest(endpoint:string,token:string,method:"GET"|"P
  if(url.protocol!=="https:"||!url.hostname.endsWith(".googleapis.com"))throw new Error("Disallowed Google API host");
  for(const [k,v] of Object.entries(params||{})){if(v!==undefined)url.searchParams.set(k,String(v));}
  const controller=new AbortController();
- const timeout=setTimeout(()=>controller.abort(),15000);
+ // The AdSense policy-issues endpoint may require a longer read window than other Google APIs.
+ // Keep the extended timeout scoped to this read-only endpoint, not OAuth or writes.
+ const timeoutMs=method==="GET"&&url.hostname==="adsense.googleapis.com"&&url.pathname.endsWith("/policyIssues")?28000:15000;
+ const timeout=setTimeout(()=>controller.abort(),timeoutMs);
  let result:Response;
  try{
   result=await fetch(url,{method,headers:{Authorization:`Bearer ${token}`,Accept:"application/json",...(body!==undefined?{"Content-Type":"application/json"}:{})},body:body===undefined?undefined:JSON.stringify(body),cache:"no-store",signal:controller.signal});

@@ -18,7 +18,9 @@ The Crashlytics API is `v1alpha`. The official reports endpoint exposes issue gr
 Analytics uses the GA4 Data API and attempts to filter to the Firebase Android stream to avoid mixing metrics from other linked apps. The response says whether that stream filter was available.
 
 ## Server configuration
-Existing variables: `GOOGLE_SERVICE_ACCOUNT_JSON`, `GOOGLE_CLOUD_PROJECT_ID`, `ANDROID_PACKAGE_NAME`.
+Existing variables: `FIREBASE_SERVICE_ACCOUNT_JSON` (preferred; fallback: `GOOGLE_SERVICE_ACCOUNT_JSON`) and `ANDROID_PACKAGE_NAME`.
+
+Set `FIREBASE_INSIGHTS_PROJECT_ID=brick-breaker-ball-8e4f5` for this game. This is a different Firebase project from the Google Cloud RTDN project `brickbreakerball-508820`; **do not** overwrite `GOOGLE_CLOUD_PROJECT_ID` used for purchases and Pub/Sub. The Firebase insights code uses Firebase credentials independently from Google Play/Cloud tools.
 
 Optional: `FIREBASE_ANDROID_APP_ID` and `GA4_PROPERTY_ID`. When omitted, Firebase Management API discovers the Android app by package name and the GA4 property from `projects.getAnalyticsDetails`.
 

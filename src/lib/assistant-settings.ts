@@ -33,7 +33,8 @@ export async function getAssistantSettings():Promise<AssistantSettings>{
   saved=await collection.findOne({_id:"main"});
  }
  // Only upgrade an untouched all-tools preset. Keep custom per-tool permissions unchanged.
- const fullReadPreset=!!saved&&saved.schemaVersion===2&&saved.toolIds?.length===preWriteToolIds.length&&preWriteToolIds.every(id=>saved.toolIds.includes(id));
+ const storedIds=saved?.toolIds;
+ const fullReadPreset=!!saved&&saved.schemaVersion===2&&!!storedIds&&storedIds.length===preWriteToolIds.length&&preWriteToolIds.every(id=>storedIds.includes(id));
  if(fullReadPreset){
   await collection.updateOne({_id:"main",schemaVersion:2,toolIds:{$size:preWriteToolIds.length}},
    {$addToSet:{toolIds:{$each:adminToolIds}},$set:{schemaVersion:3}});

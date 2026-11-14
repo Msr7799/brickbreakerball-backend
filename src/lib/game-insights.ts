@@ -120,7 +120,7 @@ async function crashIssueRoot(issueId:string){
 }
 export async function crashlyticsUpdateIssue(issueId:string,state:"OPEN"|"CLOSED"|"MUTED"){
  const name=await crashIssueRoot(issueId);
- return googleRequest(`${name}?updateMask=state`,await insightsToken("firebase"),"PATCH",{name:name.replace("https://firebasecrashlytics.googleapis.com/v1alpha/",""),state});
+ return googleRequest(`${name}?updateMask=state`,await insightsToken("firebase"),"PATCH",{state});
 }
 export async function crashlyticsListNotes(issueId:string,pageSize=30,pageToken?:string){
  return googleGet(`${await crashIssueRoot(issueId)}/notes`,await insightsToken("firebase"),{pageSize,pageToken});
@@ -146,7 +146,7 @@ export async function analyticsCreateKeyEvent(eventName:string,countingMethod:"O
 }
 export async function analyticsUpdateKeyEvent(keyEventId:string,countingMethod:"ONCE_PER_EVENT"|"ONCE_PER_SESSION"){
  const root=await analyticsKeyEventRoot(),name=`${root}/${safeId(keyEventId,"GA4 key event")}`;
- return googleRequest(`${name}?updateMask=counting_method`,await insightsToken("analyticsEdit"),"PATCH",{name:name.replace("https://analyticsadmin.googleapis.com/v1beta/",""),countingMethod});
+ return googleRequest(`${name}?updateMask=counting_method`,await insightsToken("analyticsEdit"),"PATCH",{countingMethod});
 }
 export async function analyticsDeleteKeyEvent(keyEventId:string){
  return googleRequest(`${await analyticsKeyEventRoot()}/${safeId(keyEventId,"GA4 key event")}`,await insightsToken("analyticsEdit"),"DELETE");

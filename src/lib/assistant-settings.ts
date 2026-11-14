@@ -5,8 +5,27 @@ const {db}=require("../../billing/lib/db.js") as {db:()=>Promise<Db>};
 export type AssistantSettings={enabled:boolean;mcpEnabled:boolean;searchEnabled:boolean;toolIds:string[];updatedAt?:Date};
 const defaults:AssistantSettings={enabled:true,mcpEnabled:true,searchEnabled:true,toolIds:toolsMeta.map(t=>t.id)};
 
+/** The original 16-tool allowlist, before Crashlytics and GA4 tools were added. */
+const originalToolIds=[
+ "tavily_search","gateway_status","firebase_read","play_list_reviews",
+ "play_list_one_time_products","play_list_subscriptions","cloud_get_project",
+ "cloud_list_pubsub_topics","cloud_list_pubsub_subscriptions","admob_list_accounts",
+ "admob_list_apps","admob_list_ad_units","admob_network_report",
+ "adsense_list_accounts","adsense_list_sites","adsense_report"
+];
+const newToolIds=defaults.toolIds.filter(id=>!originalToolIds.includes(id));
 export async function getAssistantSettings():Promise<AssistantSettings>{
- const saved=await (await db()).collection<AssistantSettings & {_id:string}>("assistant_settings").findOne({_id:"main"});
+ const collection=(await db()).collection<AssistantSettings & {_id:string;schemaVersion?:number}>("assistant_settings");
+ let saved=await collection.findOne({_id:"main"});
+ // One-time upgrade only for users who enabled *every* original tool.
+ // Respect hand-picked allowlists and never re-enable subsequently disabled tools.
+ const isFullLegacy=saved?.schemaVersion===undefined&&saved.toolIds?.length===originalToolIds.length&&originalToolIds.every(id=>saved!.toolIds.includes(id));
+ if(isFullLegacy){
+  await collection.updateOne({_id:"main",schemaVersion:{$exists:false},toolIds:{$size:originalToolIds.length}},{
+   $addToSet:{toolIds:{$each:newToolIds}},$set:{schemaVersion:2}
+  });
+  saved=await collection.findOne({_id:"main"});
+ }
  return {...defaults,...saved,toolIds:saved?.toolIds??defaults.toolIds};
 }
 export async function saveAssistantSettings(patch:Partial<Pick<AssistantSettings,"enabled"|"mcpEnabled"|"searchEnabled"|"toolIds">>):Promise<AssistantSettings>{

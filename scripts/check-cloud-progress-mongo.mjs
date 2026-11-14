@@ -18,7 +18,7 @@ let collection;
 try{
   await client.connect();
   collection=client.db(process.env.MONGODB_DB).collection('cloud_progress_fixtures_v1');
-  const snapshot={schema:1,sections:['progress','wallet','items','transactions','cosmetics','guide','pendingRewards'].map(name=>({name,entries:name==='wallet'?[{key:'coins',type:'i',value:'432'},{key:'receipt',type:'b',value:'true'}]:[]}))};
+  const snapshot={schema:1,sections:['progress','wallet','items','transactions','cosmetics','guide','pendingRewards','controls'].map(name=>({name,entries:name==='wallet'?[{key:'coins',type:'i',value:'432'},{key:'receipt',type:'b',value:'true'}]:[]}))};
   const initial={baseRevision:0,saveId:'a'.repeat(32),snapshot};
   assert.equal((await writeCheckpoint(collection,id,initial)).conflict,false);
   assert.equal((await writeCheckpoint(collection,id,initial)).record.revision,1);

@@ -1,6 +1,6 @@
 /** Versioned, lossless preferences checkpoint; never a currency grant API. */
 export const MAX_PROGRESS_BYTES = 1024 * 1024;
-export const PROGRESS_SECTIONS = ['progress','wallet','items','transactions','cosmetics','guide','pendingRewards'] as const;
+export const PROGRESS_SECTIONS = ['progress','wallet','items','transactions','cosmetics','guide','pendingRewards','controls'] as const;
 export type ProgressEntry = {key:string;type:'s'|'b'|'i'|'l'|'f';value:string};
 export type ProgressSnapshot = {schema:1;sections:{name:string;entries:ProgressEntry[]}[]};
 export type ProgressCommand = {baseRevision:number;saveId:string;snapshot:ProgressSnapshot};
@@ -14,7 +14,7 @@ export function parseProgressCommand(value:unknown):ProgressCommand {
   if(!Number.isSafeInteger(body.baseRevision) || (body.baseRevision as number)<0 || (body.baseRevision as number)>=Number.MAX_SAFE_INTEGER) return fail();
   if(typeof body.saveId!=='string' || !/^[a-f0-9]{32}$/.test(body.saveId)) return fail();
   const snap=body.snapshot as ProgressSnapshot;
-  if(!snap || snap.schema!==1 || Object.keys(snap).some(k=>!['schema','sections'].includes(k)) || !Array.isArray(snap.sections) || snap.sections.length!==PROGRESS_SECTIONS.length) return fail();
+  if(!snap || snap.schema!==1 || Object.keys(snap).some(k=>!['schema','sections'].includes(k)) || !Array.isArray(snap.sections) || snap.sections.length<PROGRESS_SECTIONS.length-1 || snap.sections.length>PROGRESS_SECTIONS.length) return fail();
   const names=new Set<string>(); let total=0;
   for(const section of snap.sections){
     if(!section || typeof section!=='object' || Object.keys(section).some(k=>!['name','entries'].includes(k)) || !PROGRESS_SECTIONS.includes(section.name as typeof PROGRESS_SECTIONS[number]) || names.has(section.name) || !Array.isArray(section.entries)) return fail();
@@ -35,6 +35,7 @@ export function parseProgressCommand(value:unknown):ProgressCommand {
       }
     }
   }
+  if(PROGRESS_SECTIONS.some(name=>name!=='controls' && !names.has(name))) return fail();
   if(Buffer.byteLength(JSON.stringify(body))>MAX_PROGRESS_BYTES) return fail();
   return body as ProgressCommand;
 }

@@ -34,6 +34,12 @@ test('validates typed checkpoint and preserves 64-bit values as decimal strings'
   body.snapshot.sections[0].entries.at(-1).value='9223372036854775808';
   assert.throws(()=>contract.parseProgressCommand(body),contract.InvalidProgress);
 });
+test('accepts an early schema-1 checkpoint without the optional controls marker',()=>{
+  const body=command(0);body.snapshot.sections=body.snapshot.sections.filter(section=>section.name!=='controls');
+  assert.equal(contract.parseProgressCommand(body),body);
+  body.snapshot.sections=body.snapshot.sections.filter(section=>section.name!=='wallet');
+  assert.throws(()=>contract.parseProgressCommand(body),contract.InvalidProgress);
+});
 test('rejects unknown stores, duplicate keys, unknown types, extra account IDs and invalid numbers',()=>{
   for(const mutate of [b=>b.uid='another-player',b=>b.baseRevision=-1,b=>b.snapshot.sections[0].name='auth',
     b=>b.snapshot.sections[0].entries.push(b.snapshot.sections[0].entries[0]),

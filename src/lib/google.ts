@@ -4,10 +4,11 @@ import {assertEnv} from "./security";
 const serviceScopes={
  firebase:["https://www.googleapis.com/auth/firebase.database","https://www.googleapis.com/auth/userinfo.email"],
  play:["https://www.googleapis.com/auth/androidpublisher"],
- cloud:["https://www.googleapis.com/auth/cloud-platform"]
+ cloud:["https://www.googleapis.com/auth/cloud-platform"],
+ analytics:["https://www.googleapis.com/auth/analytics.readonly"]
 } as const;
 
-export async function googleToken(service:"play"|"cloud"):Promise<string> {
+export async function googleToken(service:"play"|"cloud"|"analytics"):Promise<string> {
  const raw=assertEnv("GOOGLE_SERVICE_ACCOUNT_JSON");
  let credentials:object;
  try {credentials=JSON.parse(raw);} catch {throw new Error("Invalid GOOGLE_SERVICE_ACCOUNT_JSON: must be full JSON on one environment variable");}

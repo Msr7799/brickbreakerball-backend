@@ -22,7 +22,7 @@ Existing variables: `FIREBASE_SERVICE_ACCOUNT_JSON` (preferred; fallback: `GOOGL
 
 Set `FIREBASE_INSIGHTS_PROJECT_ID=brick-breaker-ball-8e4f5` for this game. This is a different Firebase project from the Google Cloud RTDN project `brickbreakerball-508820`; **do not** overwrite `GOOGLE_CLOUD_PROJECT_ID` used for purchases and Pub/Sub. The Firebase insights code uses Firebase credentials independently from Google Play/Cloud tools.
 
-Optional: `FIREBASE_ANDROID_APP_ID` and `GA4_PROPERTY_ID`. When omitted, Firebase Management API discovers the Android app by package name and the GA4 property from `projects.getAnalyticsDetails`.
+Optional: `FIREBASE_ANDROID_APP_ID`, `GA4_PROPERTY_ID`, and `GA4_ANDROID_STREAM_ID` (when Firebase stream mapping cannot be discovered). If the Android stream ID is unknown, analytics requests fail rather than returning a mixture of other apps' data. When omitted, Firebase Management API discovers the Android app by package name and the GA4 property from `projects.getAnalyticsDetails`.
 
 Required access:
 1. Enable Firebase Management API, Firebase Crashlytics API, and Google Analytics Data API in Google Cloud (when applicable).

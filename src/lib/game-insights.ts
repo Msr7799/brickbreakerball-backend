@@ -61,7 +61,7 @@ function crashFilter(hours:number,version?:string){
  return url.searchParams;
 }
 export async function crashlyticsListReports(){
- return googleGet(`${await crashRoot()}/reports`,await googleToken("cloud"));
+ return googleGet(`${await crashRoot()}/reports`,await insightsToken("firebase"));
 }
 export async function crashlyticsGetReport(input:{reportId:string;hours:number;version?:string;pageSize:number;pageToken?:string}){
  const root=await crashRoot();
@@ -69,10 +69,10 @@ export async function crashlyticsGetReport(input:{reportId:string;hours:number;v
  for(const [k,v] of crashFilter(input.hours,input.version))url.searchParams.append(k,v);
  url.searchParams.set("pageSize",String(input.pageSize));
  if(input.pageToken)url.searchParams.set("pageToken",input.pageToken);
- return googleGet(url.toString(),await googleToken("cloud"));
+ return googleGet(url.toString(),await insightsToken("firebase"));
 }
 export async function crashlyticsGetIssue(issueId:string){
- return googleGet(`${await crashRoot()}/issues/${safeId(issueId,"Crashlytics issue")}`,await googleToken("cloud"));
+ return googleGet(`${await crashRoot()}/issues/${safeId(issueId,"Crashlytics issue")}`,await insightsToken("firebase"));
 }
 export async function crashlyticsListEvents(input:{issueId:string;hours:number;version?:string;pageSize:number;pageToken?:string}){
  const url=new URL(`${await crashRoot()}/events`);
@@ -80,13 +80,13 @@ export async function crashlyticsListEvents(input:{issueId:string;hours:number;v
  url.searchParams.set("filter.issue.id",safeId(input.issueId,"Crashlytics issue"));
  url.searchParams.set("pageSize",String(input.pageSize));
  if(input.pageToken)url.searchParams.set("pageToken",input.pageToken);
- return googleGet(url.toString(),await googleToken("cloud"));
+ return googleGet(url.toString(),await insightsToken("firebase"));
 }
 type AnalyticsDetails={analyticsProperty?:{id?:string};streamMappings?:Array<{app?:string;streamId?:string}>};
 async function analyticsContext():Promise<{propertyId:string;streamId?:string}>{
  const details=await googleGet(
   `https://firebase.googleapis.com/v1beta1/projects/${encodeURIComponent(project())}/analyticsDetails`,
-  await googleToken("cloud")
+  await insightsToken("firebase")
  ) as AnalyticsDetails;
  const id=(process.env.GA4_PROPERTY_ID||details.analyticsProperty?.id||"").replace(/^properties\//,"");
  if(!/^\d{5,30}$/.test(id))throw new Error("GA4 property not linked or GA4_PROPERTY_ID is invalid");

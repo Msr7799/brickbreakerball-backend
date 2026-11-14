@@ -1,20 +1,21 @@
-/** Run LOCALLY only. Authorizes Google AdMob and AdSense read-only scopes. No tokens are persisted. */
+/** Run LOCALLY only. Authorizes Google AdMob and AdSense read-only scopes by default, opt-in write with --write. No tokens are persisted. */
 import { OAuth2Client } from "google-auth-library";
 import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
 import { URL } from "node:url";
 
 const mode=process.argv.includes("--admob")?"admob":process.argv.includes("--adsense")?"adsense":"both";
+const write=process.argv.includes("--write");
 const id=process.env.GOOGLE_OAUTH_CLIENT_ID;
 const secret=process.env.GOOGLE_OAUTH_CLIENT_SECRET;
-if(!id||!secret){console.error("Set GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET before running npm run oauth");process.exit(1);}
+if(!id||!secret){console.error("Set GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET before running pnpm run oauth");process.exit(1);}
 const port=8765;
 const redirect=`http://127.0.0.1:${port}/callback`;
 const oauth=new OAuth2Client(id,secret,redirect);
 const state=randomBytes(24).toString("hex");
 const url=oauth.generateAuthUrl({
  access_type:"offline",prompt:"consent",state,
- scope:mode==="admob"?["https://www.googleapis.com/auth/admob.readonly"]:mode==="adsense"?["https://www.googleapis.com/auth/adsense.readonly"]:["https://www.googleapis.com/auth/admob.readonly","https://www.googleapis.com/auth/adsense.readonly"]
+ scope:mode==="admob"?(write?["https://www.googleapis.com/auth/admob.readonly","https://www.googleapis.com/auth/admob.monetization"]:["https://www.googleapis.com/auth/admob.readonly"]):mode==="adsense"?(write?["https://www.googleapis.com/auth/adsense"]:["https://www.googleapis.com/auth/adsense.readonly"]):write?["https://www.googleapis.com/auth/admob.readonly","https://www.googleapis.com/auth/admob.monetization","https://www.googleapis.com/auth/adsense"]:["https://www.googleapis.com/auth/admob.readonly","https://www.googleapis.com/auth/adsense.readonly"]
 });
 const server=createServer(async(req,res)=>{
  try {

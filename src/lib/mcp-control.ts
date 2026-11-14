@@ -4,7 +4,7 @@ import {firebaseRead,firebaseProbe} from "./firebase";
 import {assertEnv,validateDateRange,dateObject,validateResource} from "./security";
 import {z} from "zod";
 import {searchTavily} from "./tavily";
-import {crashlyticsListReports,crashlyticsGetReport,crashlyticsGetIssue,crashlyticsListEvents,analyticsReport,crashlyticsListNotes,crashlyticsUpdateIssue,crashlyticsCreateNote,crashlyticsDeleteNote,analyticsListKeyEvents,analyticsCreateKeyEvent,analyticsUpdateKeyEvent,analyticsDeleteKeyEvent} from "./game-insights";
+import {analyticsCredentialIdentity,crashlyticsListReports,crashlyticsGetReport,crashlyticsGetIssue,crashlyticsListEvents,analyticsReport,crashlyticsListNotes,crashlyticsUpdateIssue,crashlyticsCreateNote,crashlyticsDeleteNote,analyticsListKeyEvents,analyticsCreateKeyEvent,analyticsUpdateKeyEvent,analyticsDeleteKeyEvent} from "./game-insights";
 import type {Db} from "mongodb";
 
 const {db}=require("../../billing/lib/db.js") as {db:()=>Promise<Db>};
@@ -77,8 +77,15 @@ async function probe(id:ServiceId):Promise<string>{
    return `Crashlytics API accessible: ${data.reports?.length??0} report types`;
   }
   case "analytics":{
-   const data=await analyticsReport("overview",1,1);
-   return `GA4 Data API accessible for property ${data.propertyId}; Android stream ${data.scopedToAndroidStream?"filtered":"unavailable"}`;
+   const identity=analyticsCredentialIdentity();
+   try {
+    const data=await analyticsReport("overview",1,1);
+    return `GA4 connected as ${identity.clientEmail} via ${identity.source}; property ${data.propertyId}; Android stream ${data.scopedToAndroidStream?"filtered":"unavailable"}`;
+   }catch(error){
+    // Only non-secret identity metadata is shown in the admin-only check details.
+    const reason=error instanceof Error?error.message:"Unknown GA4 error";
+    throw new Error(`GA4 caller: ${identity.clientEmail} (${identity.source}); ${reason}`);
+   }
   }
   case "cloud":{
    const resp=await googleGet(`https://cloudresourcemanager.googleapis.com/v3/projects/${encodeURIComponent(cloudId())}`,await googleToken("cloud")) as {projectId?:string};

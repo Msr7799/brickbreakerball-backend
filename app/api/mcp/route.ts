@@ -7,7 +7,7 @@ import {googleGet,googleRequest,googleToken,oauthToken} from "../../../src/lib/g
 import {writeAudit,toolsMeta} from "../../../src/lib/mcp-control";
 import {getAssistantSettings,allowedTool} from "../../../src/lib/assistant-settings";
 import {searchTavily} from "../../../src/lib/tavily";
-import {crashlyticsListReports,crashlyticsGetReport,crashlyticsGetIssue,crashlyticsListEvents,analyticsReport,crashlyticsListNotes,crashlyticsUpdateIssue,crashlyticsCreateNote,crashlyticsDeleteNote,analyticsListKeyEvents,analyticsCreateKeyEvent,analyticsUpdateKeyEvent,analyticsDeleteKeyEvent} from "../../../src/lib/game-insights";
+import {analyticsCredentialIdentity,crashlyticsListReports,crashlyticsGetReport,crashlyticsGetIssue,crashlyticsListEvents,analyticsReport,crashlyticsListNotes,crashlyticsUpdateIssue,crashlyticsCreateNote,crashlyticsDeleteNote,analyticsListKeyEvents,analyticsCreateKeyEvent,analyticsUpdateKeyEvent,analyticsDeleteKeyEvent} from "../../../src/lib/game-insights";
 import {oauthEnabled} from "../../../src/lib/mcp-oauth-helpers";
 import {verifyMcpOauthAccess,oauthChallenge} from "../../../src/lib/mcp-oauth";
 
@@ -49,6 +49,7 @@ const handler=createMcpHandler((server)=>{
   admob:!!((process.env.GOOGLE_ADMOB_REFRESH_TOKEN||process.env.GOOGLE_OAUTH_REFRESH_TOKEN)&&process.env.GOOGLE_OAUTH_CLIENT_ID&&process.env.GOOGLE_OAUTH_CLIENT_SECRET),
   adsense:!!((process.env.GOOGLE_ADSENSE_REFRESH_TOKEN||process.env.GOOGLE_OAUTH_REFRESH_TOKEN)&&process.env.GOOGLE_OAUTH_CLIENT_ID&&process.env.GOOGLE_OAUTH_CLIENT_SECRET),
   tavily:!!process.env.TAVILY_API_KEY,
+  analyticsCaller:(()=>{try{return analyticsCredentialIdentity();}catch{return {error:"Firebase insights credentials unavailable"};}})(),
   crashlytics:!!((process.env.FIREBASE_SERVICE_ACCOUNT_JSON||process.env.GOOGLE_SERVICE_ACCOUNT_JSON)&&process.env.ANDROID_PACKAGE_NAME),
   analytics:!!((process.env.FIREBASE_SERVICE_ACCOUNT_JSON||process.env.GOOGLE_SERVICE_ACCOUNT_JSON)&&process.env.ANDROID_PACKAGE_NAME),
   note:"Configured does not guarantee Google granted API access. Run account-list tools to verify."

@@ -13,7 +13,12 @@ const originalToolIds=[
  "admob_list_apps","admob_list_ad_units","admob_network_report",
  "adsense_list_accounts","adsense_list_sites","adsense_report"
 ];
-const newToolIds=defaults.toolIds.filter(id=>!originalToolIds.includes(id));
+const preWriteToolIds=[...originalToolIds,
+ "crashlytics_list_reports","crashlytics_get_report","crashlytics_get_issue","crashlytics_list_events",
+ "analytics_overview","analytics_top_events","analytics_app_versions"
+];
+const preWriteAdditions=preWriteToolIds.filter(id=>!originalToolIds.includes(id));
+const adminToolIds=defaults.toolIds.filter(id=>!preWriteToolIds.includes(id));
 export async function getAssistantSettings():Promise<AssistantSettings>{
  const collection=(await db()).collection<AssistantSettings & {_id:string;schemaVersion?:number}>("assistant_settings");
  let saved=await collection.findOne({_id:"main"});
@@ -23,8 +28,15 @@ export async function getAssistantSettings():Promise<AssistantSettings>{
  const isFullLegacy=!!saved&&saved.schemaVersion===undefined&&previousIds?.length===originalToolIds.length&&originalToolIds.every(id=>previousIds.includes(id));
  if(isFullLegacy){
   await collection.updateOne({_id:"main",schemaVersion:{$exists:false},toolIds:{$size:originalToolIds.length}},{
-   $addToSet:{toolIds:{$each:newToolIds}},$set:{schemaVersion:2}
+   $addToSet:{toolIds:{$each:preWriteAdditions}},$set:{schemaVersion:2}
   });
+  saved=await collection.findOne({_id:"main"});
+ }
+ // Only upgrade an untouched all-tools preset. Keep custom per-tool permissions unchanged.
+ const fullReadPreset=!!saved&&saved.schemaVersion===2&&saved.toolIds?.length===preWriteToolIds.length&&preWriteToolIds.every(id=>saved.toolIds.includes(id));
+ if(fullReadPreset){
+  await collection.updateOne({_id:"main",schemaVersion:2,toolIds:{$size:preWriteToolIds.length}},
+   {$addToSet:{toolIds:{$each:adminToolIds}},$set:{schemaVersion:3}});
   saved=await collection.findOne({_id:"main"});
  }
  return {...defaults,...saved,toolIds:saved?.toolIds??defaults.toolIds};

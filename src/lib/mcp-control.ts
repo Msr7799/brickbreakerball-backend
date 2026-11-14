@@ -37,8 +37,8 @@ export const credentialsReady=(id:ServiceId):boolean=>{
   case "tavily":return has("TAVILY_API_KEY");
   case "firebase":return has("FIREBASE_DATABASE_URL")&&has("FIREBASE_SERVICE_ACCOUNT_JSON");
   case "cloud":return has("GOOGLE_CLOUD_PROJECT_ID")&&has("GOOGLE_SERVICE_ACCOUNT_JSON");
-  case "crashlytics":return has("GOOGLE_CLOUD_PROJECT_ID")&&has("GOOGLE_SERVICE_ACCOUNT_JSON")&&has("ANDROID_PACKAGE_NAME");
-  case "analytics":return has("GOOGLE_CLOUD_PROJECT_ID")&&has("GOOGLE_SERVICE_ACCOUNT_JSON")&&has("ANDROID_PACKAGE_NAME");
+  case "crashlytics":return (has("FIREBASE_SERVICE_ACCOUNT_JSON")||has("GOOGLE_SERVICE_ACCOUNT_JSON"))&&has("ANDROID_PACKAGE_NAME");
+  case "analytics":return (has("FIREBASE_SERVICE_ACCOUNT_JSON")||has("GOOGLE_SERVICE_ACCOUNT_JSON"))&&has("ANDROID_PACKAGE_NAME");
   case "play":return has("PUBSUB_PUSH_SERVICE_ACCOUNT")&&has("PUBSUB_AUDIENCE")&&has("GOOGLE_PLAY_PACKAGE_NAME");
   case "admob":return has("GOOGLE_OAUTH_CLIENT_ID")&&has("GOOGLE_OAUTH_CLIENT_SECRET")&&(has("GOOGLE_ADMOB_REFRESH_TOKEN")||has("GOOGLE_OAUTH_REFRESH_TOKEN"));
   case "adsense":return has("GOOGLE_OAUTH_CLIENT_ID")&&has("GOOGLE_OAUTH_CLIENT_SECRET")&&(has("GOOGLE_ADSENSE_REFRESH_TOKEN")||has("GOOGLE_OAUTH_REFRESH_TOKEN"));

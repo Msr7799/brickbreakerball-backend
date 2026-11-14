@@ -1,4 +1,4 @@
-/** Audited MCP read-only adapters for Firebase Crashlytics and GA4 Data API. */
+/** Scoped Firebase Crashlytics and GA4 Data/Admin API adapters. */
 import {assertEnv} from "./security";
 import {googleGet,googleRequest} from "./google";
 import {GoogleAuth} from "google-auth-library";
@@ -17,8 +17,8 @@ const project=()=>{
  if(!/^[a-z][a-z0-9-]{3,62}$/.test(id))throw new Error("Invalid Firebase insights project ID");
  return id;
 };
-async function insightsToken(service:"firebase"|"analytics"):Promise<string>{
- const scopes=service==="firebase"?["https://www.googleapis.com/auth/cloud-platform"]:["https://www.googleapis.com/auth/analytics.readonly"];
+async function insightsToken(service:"firebase"|"analytics"|"analyticsEdit"):Promise<string>{
+ const scopes=service==="firebase"?["https://www.googleapis.com/auth/cloud-platform"]:service==="analyticsEdit"?["https://www.googleapis.com/auth/analytics.edit"]:["https://www.googleapis.com/auth/analytics.readonly"];
  const auth=new GoogleAuth({credentials:firebaseCredentials(),scopes});
  const client=await auth.getClient(),access=await client.getAccessToken();
  if(!access.token)throw new Error("Could not get Firebase insights read token");
@@ -112,4 +112,42 @@ export async function analyticsReport(kind:"overview"|"events"|"versions",days:n
  if(kind!=="overview")body.orderBys=[{metric:{metricName:kind==="events"?"eventCount":"activeUsers"},desc:true}];
  const data=await googleRequest(`https://analyticsdata.googleapis.com/v1beta/properties/${propertyId}:runReport`,await insightsToken("analytics"),"POST",body);
  return {propertyId,scopedToAndroidStream:!!streamId,report:kind,data};
+}
+
+/** Restrict all mutations to the configured Firebase Android app; identifiers cannot override the project or app. */
+async function crashIssueRoot(issueId:string){
+ return `${await crashRoot()}/issues/${safeId(issueId,"Crashlytics issue")}`;
+}
+export async function crashlyticsUpdateIssue(issueId:string,state:"OPEN"|"CLOSED"|"MUTED"){
+ const name=await crashIssueRoot(issueId);
+ return googleRequest(`${name}?updateMask=state`,await insightsToken("firebase"),"PATCH",{name:name.replace("https://firebasecrashlytics.googleapis.com/v1alpha/",""),state});
+}
+export async function crashlyticsListNotes(issueId:string,pageSize=30,pageToken?:string){
+ return googleGet(`${await crashIssueRoot(issueId)}/notes`,await insightsToken("firebase"),{pageSize,pageToken});
+}
+export async function crashlyticsCreateNote(issueId:string,body:string){
+ if(body.trim().length<1||body.length>3000)throw new Error("Crashlytics note must be 1-3000 characters");
+ return googleRequest(`${await crashIssueRoot(issueId)}/notes`,await insightsToken("firebase"),"POST",{body:body.trim()});
+}
+export async function crashlyticsDeleteNote(issueId:string,noteId:string){
+ return googleRequest(`${await crashIssueRoot(issueId)}/notes/${safeId(noteId,"Crashlytics note")}`,await insightsToken("firebase"),"DELETE");
+}
+/** GA4 Key Events are PROPERTY-wide, not Android-stream-only. Confirm before changes. */
+async function analyticsKeyEventRoot(){
+ const {propertyId}=await analyticsContext(); // validates the Firebase project and matching Android app
+ return `https://analyticsadmin.googleapis.com/v1beta/properties/${propertyId}/keyEvents`;
+}
+export async function analyticsListKeyEvents(pageSize=50,pageToken?:string){
+ return googleGet(await analyticsKeyEventRoot(),await insightsToken("analytics"),{pageSize,pageToken});
+}
+export async function analyticsCreateKeyEvent(eventName:string,countingMethod:"ONCE_PER_EVENT"|"ONCE_PER_SESSION"){
+ if(!/^[A-Za-z][A-Za-z0-9_]{0,39}$/.test(eventName))throw new Error("Invalid GA4 event name");
+ return googleRequest(await analyticsKeyEventRoot(),await insightsToken("analyticsEdit"),"POST",{eventName,countingMethod});
+}
+export async function analyticsUpdateKeyEvent(keyEventId:string,countingMethod:"ONCE_PER_EVENT"|"ONCE_PER_SESSION"){
+ const root=await analyticsKeyEventRoot(),name=`${root}/${safeId(keyEventId,"GA4 key event")}`;
+ return googleRequest(`${name}?updateMask=counting_method`,await insightsToken("analyticsEdit"),"PATCH",{name:name.replace("https://analyticsadmin.googleapis.com/v1beta/",""),countingMethod});
+}
+export async function analyticsDeleteKeyEvent(keyEventId:string){
+ return googleRequest(`${await analyticsKeyEventRoot()}/${safeId(keyEventId,"GA4 key event")}`,await insightsToken("analyticsEdit"),"DELETE");
 }

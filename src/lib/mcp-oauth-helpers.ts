@@ -64,6 +64,15 @@ export function consentCsrfAllowed(submitted:string,cookieToken:string,headers:H
  const origin=headers.get("origin"),site=headers.get("sec-fetch-site");
  return origin===oauthOrigin()||(site==="same-origin"&&(!origin||origin==="null"));
 }
+/** A duplicate approval may reuse its original redirect briefly, but never reissue a code. */
+export function consentReplayAllowed(
+ receipt:{completedDecision?:"approve"|"deny";completedCode?:string;replayUntil?:Date}|null,
+ approve:boolean,now:Date=new Date()
+):boolean{
+ if(!receipt||receipt.completedDecision!==(approve?"approve":"deny")||
+    !(receipt.replayUntil instanceof Date)||receipt.replayUntil<=now)return false;
+ return !approve||/^[A-Za-z0-9_-]{43}$/.test(receipt.completedCode||"");
+}
 /** Supports the original and recently reissued consent forms, consumed atomically. */
 export function consentTokenSelector(id:string,csrf:string,now:Date=new Date()){
  const hash=sha256(csrf);

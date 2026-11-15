@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {createHash} from "node:crypto";
-import {OAUTH_SCOPE,oauthOrigin,oauthResource,isChatGptClientId,isChatGptRedirect,validateClientMetadata,parseAuthorizationInput,verifyPkce,consentOriginAllowed,consentCsrfAllowed,consentTokenSelector,matchExactSecret} from "../src/lib/mcp-oauth-helpers.ts";
+import {OAUTH_SCOPE,oauthOrigin,oauthResource,isChatGptClientId,isChatGptRedirect,validateClientMetadata,parseAuthorizationInput,verifyPkce,consentOriginAllowed,consentCsrfAllowed,consentTokenSelector,consentReplayAllowed,matchExactSecret} from "../src/lib/mcp-oauth-helpers.ts";
 
 const clientId="https://chatgpt.com/oauth/client.json";
 const redirectUri="https://chatgpt.com/connector_platform_oauth_redirect";
@@ -90,4 +90,16 @@ test("a mismatch from an unrelated site cannot use a stale cookie to bypass CSRF
  assert.equal(consentOriginAllowed(outsider),false);
  assert.equal(consentCsrfAllowed(token,other,outsider),false);
  assert.equal(consentCsrfAllowed(token,"",outsider),false);
+});
+
+test("a completed approval is idempotent for 90s without minting another code",()=>{
+ const now=new Date("2026-11-16T00:00:00Z");
+ const code="C".repeat(43),fresh=new Date(now.getTime()+90_000),expired=new Date(now.getTime()-1);
+ assert.equal(consentReplayAllowed({completedDecision:"approve",completedCode:code,replayUntil:fresh},true,now),true);
+ assert.equal(consentReplayAllowed({completedDecision:"approve",completedCode:code,replayUntil:fresh},false,now),false);
+ assert.equal(consentReplayAllowed({completedDecision:"approve",completedCode:code,replayUntil:expired},true,now),false);
+ assert.equal(consentReplayAllowed({completedDecision:"approve",completedCode:"",replayUntil:fresh},true,now),false);
+ assert.equal(consentReplayAllowed({completedDecision:"deny",replayUntil:fresh},false,now),true);
+ assert.equal(consentReplayAllowed({completedDecision:"deny",replayUntil:fresh},true,now),false);
+ assert.equal(consentReplayAllowed(null,true,now),false);
 });

@@ -1,15 +1,15 @@
 import {randomBytes} from "node:crypto";
 import type {Db} from "mongodb";
-import {isChatGptClientId,oauthEnabled,oauthOrigin,oauthResource,OAUTH_SCOPE,matchExactSecret,sha256,validateClientMetadata,verifyPkce} from "./mcp-oauth-helpers";
+import {isChatGptClientId,oauthEnabled,oauthOrigin,oauthResource,OAUTH_SCOPE,matchExactSecret,sha256,validateClientMetadata,verifyPkce,consentTokenSelector} from "./mcp-oauth-helpers";
 
 const {db}=require("../../billing/lib/db.js") as {db:()=>Promise<Db>};
-const REQUEST_MINUTES=10;
+const REQUEST_MINUTES=20;
 const ACCESS_SECONDS=3600;
 const REFRESH_DAYS=30;
 export const oauthHeaders={"Cache-Control":"no-store","X-Content-Type-Options":"nosniff","Referrer-Policy":"no-referrer"};
 export type ConsentRequest={
  _id:string;clientId:string;redirectUri:string;state:string;challenge:string;scope:string;resource:string;
- csrfHash:string;expiresAt:Date;
+ csrfHash:string;csrfHashes?:string[];expiresAt:Date;
 };
 type OAuthCode={_id:string;clientId:string;redirectUri:string;scope:string;challenge:string;resource:string;expiresAt:Date};
 type OAuthToken={_id:string;type:"access"|"refresh";clientId:string;scope:string;resource:string;expiresAt:Date};
@@ -36,15 +36,22 @@ export async function createConsent(input:Omit<ConsentRequest,"_id"|"csrfHash"|"
 export async function renewConsent(id:string):Promise<{doc:ConsentRequest;csrf:string}|null>{
  if(!/^[A-Za-z0-9_-]{43}$/.test(id))return null;
  const csrf=newSecret(),doc=await (await db()).collection<ConsentRequest>("mcp_oauth_consents").findOneAndUpdate(
-  {_id:"r:"+id,expiresAt:{$gt:new Date()}},{$set:{csrfHash:sha256(csrf)}},{returnDocument:"after"});
+  {_id:"r:"+id,expiresAt:{$gt:new Date()}},{$addToSet:{csrfHashes:sha256(csrf)}},{returnDocument:"after"});
  return doc?{doc,csrf}:null;
 }
 export async function completeConsent(id:string,csrf:string,approve:boolean):Promise<{redirect:string}|null>{
  if(!/^[A-Za-z0-9_-]{43}$/.test(id)||!/^[A-Za-z0-9_-]{43}$/.test(csrf))return null;
  const row=await (await db()).collection<ConsentRequest>("mcp_oauth_consents").findOneAndDelete({
-  _id:"r:"+id,csrfHash:sha256(csrf),expiresAt:{$gt:new Date()}
+  ...consentTokenSelector(id,csrf)
  });
- if(!row)return null;
+ if(!row){
+  // No bearer codes or secrets in logs: distinguish an old form from a replay/expiry.
+  const remaining=await (await db()).collection<ConsentRequest>("mcp_oauth_consents").findOne({_id:"r:"+id});
+  console.warn("[forgepulse-oauth] Consent unavailable",{
+   reason:remaining?(remaining.expiresAt<=new Date()?"expired":"stale_or_invalid_form_token"):"expired_or_already_consumed"
+  });
+  return null;
+ }
  const redirect=new URL(row.redirectUri);
  redirect.searchParams.set("state",row.state);
  redirect.searchParams.set("iss",oauthOrigin());

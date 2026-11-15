@@ -57,9 +57,17 @@ export function consentOriginAllowed(headers:Headers):boolean{
  */
 export function consentCsrfAllowed(submitted:string,cookieToken:string,headers:Headers):boolean{
  if(!/^[A-Za-z0-9_-]{43}$/.test(submitted))return false;
- if(cookieToken)return matchExactSecret(submitted,cookieToken);
+ if(cookieToken&&matchExactSecret(submitted,cookieToken))return true;
+ // Multiple authorization tabs share a browser cookie. When the cookie belongs
+ // to another tab, trust ONLY a same-origin form, then independently validate
+ // the unguessable, one-time token against the MongoDB consent record.
  const origin=headers.get("origin"),site=headers.get("sec-fetch-site");
  return origin===oauthOrigin()||(site==="same-origin"&&(!origin||origin==="null"));
+}
+/** Supports the original and recently reissued consent forms, consumed atomically. */
+export function consentTokenSelector(id:string,csrf:string,now:Date=new Date()){
+ const hash=sha256(csrf);
+ return {_id:"r:"+id,expiresAt:{$gt:now},$or:[{csrfHash:hash},{csrfHashes:hash}]};
 }
 export function sha256(value:string):string{return createHash("sha256").update(value).digest("hex");}
 export function verifyPkce(challenge:string,verifier:string):boolean{

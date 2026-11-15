@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {createHash} from "node:crypto";
-import {OAUTH_SCOPE,oauthOrigin,oauthResource,isChatGptClientId,isChatGptRedirect,validateClientMetadata,parseAuthorizationInput,verifyPkce,consentOriginAllowed,consentCsrfAllowed,matchExactSecret} from "../src/lib/mcp-oauth-helpers.ts";
+import {OAUTH_SCOPE,oauthOrigin,oauthResource,isChatGptClientId,isChatGptRedirect,validateClientMetadata,parseAuthorizationInput,verifyPkce,consentOriginAllowed,consentCsrfAllowed,consentTokenSelector,matchExactSecret} from "../src/lib/mcp-oauth-helpers.ts";
 
 const clientId="https://chatgpt.com/oauth/client.json";
 const redirectUri="https://chatgpt.com/connector_platform_oauth_redirect";
@@ -65,11 +65,29 @@ test("mobile and desktop consent rejects forged CSRF and accepts trusted no-cook
  const crossSite=new Headers({origin:"https://attacker.example","sec-fetch-site":"cross-site"});
  const unsafeUnknown=new Headers({});
  assert.equal(consentCsrfAllowed(token,token,sameOrigin),true);
- assert.equal(consentCsrfAllowed(token,other,sameOrigin),false);
+ // A stale cookie from another OAuth tab does not invalidate the server-held form secret.
+ assert.equal(consentCsrfAllowed(token,other,sameOrigin),true);
+ assert.equal(consentCsrfAllowed(token,other,unsafeUnknown),false);
  assert.equal(consentCsrfAllowed(token,"",sameOrigin),true);
  assert.equal(consentCsrfAllowed(token,"",privacyWebview),true);
  assert.equal(consentCsrfAllowed(token,"",crossSite),false);
  assert.equal(consentCsrfAllowed(token,"",unsafeUnknown),false);
  assert.equal(consentCsrfAllowed("invalid","",sameOrigin),false);
  assert.equal(consentCsrfAllowed(token,"",new Headers({origin:"null","sec-fetch-site":"cross-site"})),false);
+});
+
+// A refreshed login page must not invalidate a still-open earlier form.
+test("consent token selector accepts both initial and refreshed server-stored hashes",()=>{
+ const id="R".repeat(43),token="Z".repeat(43),now=new Date("2026-11-16T00:00:00.000Z");
+ const selector=consentTokenSelector(id,token,now);
+ const hash=createHash("sha256").update(token).digest("hex");
+ assert.deepEqual(selector,{_id:"r:"+id,expiresAt:{$gt:now},$or:[{csrfHash:hash},{csrfHashes:hash}]});
+ assert.equal(selector.$or.length,2);
+});
+test("a mismatch from an unrelated site cannot use a stale cookie to bypass CSRF",()=>{
+ const token="T".repeat(43),other="Q".repeat(43);
+ const outsider=new Headers({origin:"https://attacker.example","sec-fetch-site":"cross-site"});
+ assert.equal(consentOriginAllowed(outsider),false);
+ assert.equal(consentCsrfAllowed(token,other,outsider),false);
+ assert.equal(consentCsrfAllowed(token,"",outsider),false);
 });

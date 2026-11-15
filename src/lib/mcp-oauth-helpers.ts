@@ -1,5 +1,10 @@
 import {createHash,timingSafeEqual} from "node:crypto";
 
+// Form posts stay same-origin, but the OAuth 303 callback continues through
+// chatgpt.com and potentially platform.openai.com. Browsers enforce form-action
+// against the full redirect chain, so it MUST NOT be set on this consent page.
+// Server-side Origin, CSRF token, PKCE and redirect URI allowlists remain enforced.
+export const OAUTH_CONSENT_CSP="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'";
 export const OAUTH_SCOPE="mcp:read";
 export const OAUTH_WRITE_SCOPE="mcp:write";
 const DEFAULT_ORIGIN="https://brickbreakerball-backend.vercel.app";

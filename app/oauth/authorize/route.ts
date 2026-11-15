@@ -1,7 +1,7 @@
 import {NextRequest} from "next/server";
 import {controlAuthorized} from "../../../src/lib/mcp-auth";
 import {POST as loginPost} from "../../api/login/route";
-import {parseAuthorizationInput,oauthEnabled,consentOriginAllowed,consentCsrfAllowed} from "../../../src/lib/mcp-oauth-helpers";
+import {parseAuthorizationInput,oauthEnabled,consentOriginAllowed,consentCsrfAllowed,OAUTH_CONSENT_CSP} from "../../../src/lib/mcp-oauth-helpers";
 import {createConsent,renewConsent,completeConsent,verifyChatGptClient,csrfCookie,readCsrfCookie,oauthHeaders} from "../../../src/lib/mcp-oauth";
 
 export const runtime="nodejs";export const dynamic="force-dynamic";

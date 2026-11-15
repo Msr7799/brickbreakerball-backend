@@ -47,7 +47,7 @@ export async function getAssistantSettings():Promise<AssistantSettings>{
   (saved.schemaVersion===undefined||saved.schemaVersion===2||saved.schemaVersion===3||saved.schemaVersion===4);
  if(untouchedOriginalPreset){
   await collection.updateOne({_id:"main",toolIds:{$size:originalToolIds.length},
-   ...(saved.schemaVersion===undefined?{schemaVersion:{$exists:false}}:{schemaVersion:saved.schemaVersion})},
+   ...(saved?.schemaVersion===undefined?{schemaVersion:{$exists:false}}:{schemaVersion:saved?.schemaVersion})},
    {$addToSet:{toolIds:{$each:defaults.toolIds}},$set:{schemaVersion:4}});
   saved=await collection.findOne({_id:"main"});
  }

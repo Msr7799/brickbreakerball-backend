@@ -38,6 +38,19 @@ export async function getAssistantSettings():Promise<AssistantSettings>{
   });
   saved=await collection.findOne({_id:"main"});
  }
+ // Upgrade an untouched original 16-tool preset directly to the current full catalog.
+ // This also repairs installations where an older schemaVersion was persisted before
+ // the staged migrations completed. Never change a custom selection.
+ const legacyIds=saved?.toolIds;
+ const untouchedOriginalPreset=!!saved&&!!legacyIds&&legacyIds.length===originalToolIds.length&&
+  originalToolIds.every(id=>legacyIds.includes(id))&&
+  (saved.schemaVersion===undefined||saved.schemaVersion===2||saved.schemaVersion===3||saved.schemaVersion===4);
+ if(untouchedOriginalPreset){
+  await collection.updateOne({_id:"main",toolIds:{$size:originalToolIds.length},
+   ...(saved.schemaVersion===undefined?{schemaVersion:{$exists:false}}:{schemaVersion:saved.schemaVersion})},
+   {$addToSet:{toolIds:{$each:defaults.toolIds}},$set:{schemaVersion:4}});
+  saved=await collection.findOne({_id:"main"});
+ }
  // Only upgrade an untouched all-tools preset. Keep custom per-tool permissions unchanged.
  const storedIds=saved?.toolIds;
  const fullReadPreset=!!saved&&saved.schemaVersion===2&&!!storedIds&&storedIds.length===preWriteToolIds.length&&preWriteToolIds.every(id=>storedIds.includes(id));

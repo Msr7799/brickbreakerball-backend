@@ -74,7 +74,10 @@ export async function POST(request:NextRequest):Promise<Response>{
    const loginResponse=await loginPost(loginRequest);
    if(!loginResponse.ok){
     const message=loginResponse.status===429?"محاولات كثيرة. جرّب عقب 15 دقيقة.":loginResponse.status===401?"كلمة المرور غير صحيحة. حاول مرة ثانية.":"تعذّر تسجيل الدخول حالياً. جرّب مرة ثانية.";
-    const response=page(request,id,submittedCsrf,"mcp:read",message);
+    const pending=await renewConsent(id);
+    if(!pending)return fail("OAuth authorization request expired. Restart connection.",400);
+    const response=page(request,id,pending.csrf,pending.doc.scope,message);
+    response.headers.set("Set-Cookie",csrfCookie(pending.csrf));
     return response;
    }
    adminCookie=loginResponse.headers.get("set-cookie");

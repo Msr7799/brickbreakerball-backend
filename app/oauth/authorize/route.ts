@@ -1,13 +1,13 @@
 import {NextRequest} from "next/server";
 import {controlAuthorized} from "../../../src/lib/mcp-auth";
 import {POST as loginPost} from "../../api/login/route";
-import {parseAuthorizationInput,oauthEnabled,consentOriginAllowed} from "../../../src/lib/mcp-oauth-helpers";
-import {createConsent,renewConsent,completeConsent,verifyChatGptClient,csrfCookie,readCsrfCookie,oauthHeaders,noLeaksEqual} from "../../../src/lib/mcp-oauth";
+import {parseAuthorizationInput,oauthEnabled,consentOriginAllowed,consentCsrfAllowed} from "../../../src/lib/mcp-oauth-helpers";
+import {createConsent,renewConsent,completeConsent,verifyChatGptClient,csrfCookie,readCsrfCookie,oauthHeaders} from "../../../src/lib/mcp-oauth";
 
 export const runtime="nodejs";export const dynamic="force-dynamic";
 const PAGE_HEADERS={...oauthHeaders,"Content-Type":"text/html; charset=utf-8","Content-Security-Policy":"default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'","X-Frame-Options":"DENY"};
 function page(request:NextRequest,id:string,csrf:string,scope:string,error=""):Response{
- const write=scope.split(/\\s+/).includes("mcp:write");
+ const write=scope.split(/\s+/).includes("mcp:write");
  const authenticated=controlAuthorized(request);
  const approvalLabel=write?"تسجيل الدخول والموافقة على القراءة والتعديل":"تسجيل الدخول والموافقة والعودة إلى ChatGPT";
  const formFields='<input type="hidden" name="request_id" value="'+id+'"><input type="hidden" name="csrf_token" value="'+csrf+'">';
@@ -43,7 +43,7 @@ export async function GET(request:NextRequest):Promise<Response>{
 }
 export async function POST(request:NextRequest):Promise<Response>{
  if(!oauthEnabled())return fail("OAuth is not enabled",404);
- // Require same-origin form submission and a one-time CSRF value bound to a Strict cookie.
+ // Verify the one-time server-bound CSRF token. Permit no-cookie mobile webviews only with a trusted same-origin signal.
  if(!consentOriginAllowed(request.headers))return fail("Invalid origin",403);
  if(!(request.headers.get("content-type")||"").startsWith("application/x-www-form-urlencoded"))return fail("Invalid content type",415);
  if(Number(request.headers.get("content-length")||0)>2048)return fail("Request too large",413);
@@ -53,7 +53,7 @@ export async function POST(request:NextRequest):Promise<Response>{
   if(["request_id","decision","csrf_token"].some(key=>body.getAll(key).length!==1)||body.getAll("password").length>1)return fail("Invalid approval");
   const id=body.get("request_id"),decision=body.get("decision"),submittedCsrf=body.get("csrf_token")||"";
   const cookieCsrf=readCsrfCookie(request.headers.get("cookie"));
-  if(!submittedCsrf||!cookieCsrf||!noLeaksEqual(submittedCsrf,cookieCsrf))return fail("CSRF check failed",403);
+  if(!consentCsrfAllowed(submittedCsrf,cookieCsrf,request.headers))return fail("CSRF check failed",403);
   if(!id||!["approve","deny"].includes(decision||""))return fail("Invalid approval");
 
   // Reuse the existing admin login endpoint, including its IP rate limit,
@@ -87,7 +87,7 @@ export async function POST(request:NextRequest):Promise<Response>{
   if(!result)return fail("Authorization expired or CSRF check failed",403);
   const response=new Response(null,{status:303,headers:{...oauthHeaders,Location:result.redirect}});
   if(adminCookie)response.headers.append("Set-Cookie",adminCookie);
-  response.headers.append("Set-Cookie","forgepulse_oauth_csrf=; Path=/oauth/authorize; HttpOnly; Secure; SameSite=Strict; Max-Age=0");
+  response.headers.append("Set-Cookie","forgepulse_oauth_csrf=; Path=/oauth/authorize; HttpOnly; Secure; SameSite=Lax; Max-Age=0");
   return response;
  }catch{return fail("Authorization unavailable",503);}
 }

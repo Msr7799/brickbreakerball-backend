@@ -43,11 +43,23 @@ export function parseAuthorizationInput(params:URLSearchParams):AuthorizationInp
     !([OAUTH_SCOPE,`${OAUTH_SCOPE} ${OAUTH_WRITE_SCOPE}`].includes(scope))||resource!==oauthResource())throw new Error("Invalid OAuth request");
  return {clientId,redirectUri,state,challenge,scope,resource};
 }
-/** Require a non-conflicting origin signal; missing/null Origin is permitted only
- * because the POST additionally requires a same-site cookie + one-time form CSRF. */
+/** Reject conflicting browser origins; no-cookie requests also require a positive same-origin signal. */
 export function consentOriginAllowed(headers:Headers):boolean{
  const reported=headers.get("origin");
  return (!reported||reported==="null"||reported===oauthOrigin())&&headers.get("sec-fetch-site")!=="cross-site";
+}
+/**
+ * Mobile in-app browsers sometimes discard cookies across an OAuth handoff.
+ * A valid, one-time random CSRF token is also hashed in the server-side consent
+ * record and is atomically consumed by completeConsent. If the browser sent a
+ * cookie, it MUST match; if it did not, demand explicit same-origin browser
+ * metadata before trying to consume the server-stored token.
+ */
+export function consentCsrfAllowed(submitted:string,cookieToken:string,headers:Headers):boolean{
+ if(!/^[A-Za-z0-9_-]{43}$/.test(submitted))return false;
+ if(cookieToken)return matchExactSecret(submitted,cookieToken);
+ const origin=headers.get("origin"),site=headers.get("sec-fetch-site");
+ return origin===oauthOrigin()||(site==="same-origin"&&(!origin||origin==="null"));
 }
 export function sha256(value:string):string{return createHash("sha256").update(value).digest("hex");}
 export function verifyPkce(challenge:string,verifier:string):boolean{

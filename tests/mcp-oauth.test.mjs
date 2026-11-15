@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {createHash} from "node:crypto";
-import {OAUTH_SCOPE,oauthOrigin,oauthResource,isChatGptClientId,isChatGptRedirect,validateClientMetadata,parseAuthorizationInput,verifyPkce,consentOriginAllowed,matchExactSecret} from "../src/lib/mcp-oauth-helpers.ts";
+import {OAUTH_SCOPE,oauthOrigin,oauthResource,isChatGptClientId,isChatGptRedirect,validateClientMetadata,parseAuthorizationInput,verifyPkce,consentOriginAllowed,consentCsrfAllowed,matchExactSecret} from "../src/lib/mcp-oauth-helpers.ts";
 
 const clientId="https://chatgpt.com/oauth/client.json";
 const redirectUri="https://chatgpt.com/connector_platform_oauth_redirect";
@@ -26,7 +26,8 @@ test("client metadata matches exact client ID, redirect URI, and public-client t
  assert.equal(validateClientMetadata(clientId,redirectUri,{...ok,token_endpoint_auth_methods_supported:["private_key_jwt"]}),false);
 });
 test("authorization validates PKCE, resource audience, scope, and non-repeated fields",()=>{
- assert.equal(parseAuthorizationInput(params()).scope,OAUTH_SCOPE);\n const writeParams=params();writeParams.set("scope","mcp:read mcp:write");assert.equal(parseAuthorizationInput(writeParams).scope,"mcp:read mcp:write");
+ assert.equal(parseAuthorizationInput(params()).scope,OAUTH_SCOPE);
+ const writeParams=params();writeParams.set("scope","mcp:read mcp:write");assert.equal(parseAuthorizationInput(writeParams).scope,"mcp:read mcp:write");
  const badResource=params();badResource.set("resource","https://another.example/api/mcp");assert.throws(()=>parseAuthorizationInput(badResource));
  const badScope=params();badScope.set("scope","mcp:write");assert.throws(()=>parseAuthorizationInput(badScope));
  const badMethod=params();badMethod.set("code_challenge_method","plain");assert.throws(()=>parseAuthorizationInput(badMethod));
@@ -55,4 +56,20 @@ test("CSRF form token must match same-site cookie value exactly",()=>{
  assert.equal(matchExactSecret(token,token),true);
  assert.equal(matchExactSecret(token,""),false);
  assert.equal(matchExactSecret(token,"Y".repeat(43)),false);
+});
+
+test("mobile and desktop consent rejects forged CSRF and accepts trusted no-cookie flows",()=>{
+ const token="T".repeat(43),other="Q".repeat(43);
+ const sameOrigin=new Headers({origin:oauthOrigin(),"sec-fetch-site":"same-origin"});
+ const privacyWebview=new Headers({"sec-fetch-site":"same-origin"});
+ const crossSite=new Headers({origin:"https://attacker.example","sec-fetch-site":"cross-site"});
+ const unsafeUnknown=new Headers({});
+ assert.equal(consentCsrfAllowed(token,token,sameOrigin),true);
+ assert.equal(consentCsrfAllowed(token,other,sameOrigin),false);
+ assert.equal(consentCsrfAllowed(token,"",sameOrigin),true);
+ assert.equal(consentCsrfAllowed(token,"",privacyWebview),true);
+ assert.equal(consentCsrfAllowed(token,"",crossSite),false);
+ assert.equal(consentCsrfAllowed(token,"",unsafeUnknown),false);
+ assert.equal(consentCsrfAllowed("invalid","",sameOrigin),false);
+ assert.equal(consentCsrfAllowed(token,"",new Headers({origin:"null","sec-fetch-site":"cross-site"})),false);
 });

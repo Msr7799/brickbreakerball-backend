@@ -103,7 +103,7 @@ export function safeOauthResponse(data:Record<string,unknown>):Response{
  return Response.json(data,{headers:{...oauthHeaders,"Pragma":"no-cache"}});
 }
 export function csrfCookie(value:string):string{
- return "forgepulse_oauth_csrf="+value+"; Path=/oauth/authorize; HttpOnly; Secure; SameSite=Strict; Max-Age=600";
+ return "forgepulse_oauth_csrf="+value+"; Path=/oauth/authorize; HttpOnly; Secure; SameSite=Lax; Max-Age=600";
 }
 export function readCsrfCookie(cookie:string|null):string{
  const match=(cookie||"").split(";").map(v=>v.trim()).find(v=>v.startsWith("forgepulse_oauth_csrf="));

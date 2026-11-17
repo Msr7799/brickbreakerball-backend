@@ -103,7 +103,7 @@ function fakeDatabase(){
     }
     return row[key]===value;
   });
-  const db={collection(name){
+  const db={async command(command){return 'ping' in command?{ok:1}:{setName:'mock-replica'};},collection(name){
     if(!collections.has(name))collections.set(name,new Map());
     const rows=collections.get(name);
     return {
@@ -137,7 +137,7 @@ function handlers(){
   const store=fakeDatabase();
   const api=load('admob-ssv',{
     './admob-ssv-contract':contract,
-    './admob-ssv-keys':{googleRewardKey:async id=>{if(id!=='7')throw new contract.SsvError('unknown_key',403);return publicKey;}},
+    './admob-ssv-keys':{probeGoogleRewardKeys:async()=>{},googleRewardKey:async id=>{if(id!=='7')throw new contract.SsvError('unknown_key',403);return publicKey;}},
     './game-firebase-auth':{gameFirebaseAuth:()=>({verifyIdToken:async(token,revocation)=>{assert.equal(revocation,true);if(!['playerA','playerB'].includes(token))throw new Error('bad token');return {uid:token==='playerA'?uid:'firebase-player-b'};}})},
     mongodb:{MongoClient:store.MongoClient}
   });
@@ -216,6 +216,34 @@ test('each signed transport reaches the real diagnostic handler without granting
     assert.equal(collections.get('admob_entitlements_v1')?.size??0,0);
     assert.equal([...collections.get('admob_ssv_diagnostics_v1').values()][0].signatureEncoding,mode.startsWith('wire')?'wire':'decoded');
   }
+});
+test('a signed Google sample probe verifies connectivity without relaxing player rewards',async()=>{
+  const {api,collections}=handlers();
+  const sample={ad_unit:'1234567890',reward_amount:'100',reward_item:'sample points',transaction_id:'123456789',user_id:'ssv-diagnostic',custom_data:'ssv-diagnostic-v1'};
+  const response=await api.callbackResponse(callback(query(sample)));
+  assert.equal(response.status,200);
+  assert.deepEqual(await response.json(),{ok:true,diagnostic:true,rewardGranted:false});
+  assert.equal(collections.get('admob_opportunities_v1').size,0);
+  assert.equal(collections.get('admob_entitlements_v1').size,0);
+  const record=[...collections.get('admob_ssv_diagnostics_v1').values()][0];
+  assert.equal(record.configuredRewardMatched,false);
+  for(const changes of [{user_id:uid},{custom_data:'v1.revive.'+'a'.repeat(43)}]){
+    assert.equal((await api.callbackResponse(callback(query({...sample,...changes})))).status,403);
+  }
+  assert.equal((await api.callbackResponse(callback(query(sample).replace('reward_amount=100','reward_amount=101')))).status,403);
+  assert.equal((await api.callbackResponse(callback(query({...sample,timestamp:String(now-86400001)})))).status,403);
+  assert.equal(collections.get('admob_entitlements_v1').size,0);
+});
+test('health separates Google connectivity from a configured reward callback and device testing',async()=>{
+  const {api}=handlers();
+  let health=await(await api.healthResponse()).json();
+  assert.equal(health.ok,true);assert.equal(health.googleCallbackVerified,false);
+  await api.callbackResponse(callback(query({ad_unit:'1234567890',reward_amount:'100',reward_item:'sample points',transaction_id:'123456789',user_id:'ssv-diagnostic',custom_data:'ssv-diagnostic-v1'})));
+  health=await(await api.healthResponse()).json();
+  assert.equal(health.googleCallbackVerified,true);assert.equal(health.configuredRewardCallbackVerified,false);assert.equal(health.deviceVerified,false);
+  await api.callbackResponse(callback(query({user_id:'ssv-diagnostic',custom_data:'ssv-diagnostic-v1'})));
+  health=await(await api.healthResponse()).json();
+  assert.equal(health.configuredRewardCallbackVerified,true);assert.equal(health.deviceVerified,false);
 });
 test('opportunity issuance quota is atomic and leaves other players independent',async()=>{
   const {api}=handlers();

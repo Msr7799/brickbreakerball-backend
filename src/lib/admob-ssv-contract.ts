@@ -60,6 +60,27 @@ export function verifySignature(parsed:ParsedCallback,key:KeyObject):'wire'|'dec
   if(parsed.signedContent!==parsed.wireContent && verify('sha256',Buffer.from(parsed.signedContent,'utf8'),{key,dsaEncoding:'der'},parsed.signature)) return 'decoded';
   throw new SsvError('invalid_signature',403);
 }
+function callbackTimestamp(rawTime:string,now:number):number {
+  const eventTime=Number(rawTime);
+  const timestamp=rawTime.length===16?Math.floor(eventTime/1000):eventTime;
+  if(!/^(?:\d{13}|\d{16})$/.test(rawTime) || !Number.isSafeInteger(eventTime) || timestamp>now+CLOCK_SKEW_MS || timestamp<now-CALLBACK_MAX_AGE_MS) throw new SsvError('invalid_timestamp',403);
+  return timestamp;
+}
+
+/** URL verification is a signed connectivity probe, never a player entitlement. */
+export function verifyDiagnosticCallback(parsed:ParsedCallback,key:KeyObject,policies:RewardPolicy[],now=Date.now()) {
+  const p=parsed.params;
+  if(p.get('user_id')!=='ssv-diagnostic' || p.get('custom_data')!=='ssv-diagnostic-v1') return null;
+  const signatureEncoding=verifySignature(parsed,key);
+  const timestamp=callbackTimestamp(p.get('timestamp')!,now);
+  const adUnit=p.get('ad_unit')!,transactionId=p.get('transaction_id')!,item=p.get('reward_item')!,amount=p.get('reward_amount')!;
+  // Google dashboard probes may contain sample unit/reward/transaction values. Accept them
+  // ONLY for this fixed diagnostic identity, with a valid Google signature and fresh time.
+  if(!/^(?:\d{1,20}|ca-app-pub-\d{16}\/\d{10})$/.test(adUnit) || !/^[a-fA-F0-9]{1,256}$/.test(transactionId) ||
+      !/^[1-9]\d{0,5}$/.test(amount) || item.length>128 || !/^\d{1,30}$/.test(p.get('ad_network')!)) throw new SsvError('invalid_diagnostic');
+  const configuredRewardMatched=policies.some(rule=>(adUnit===rule.adUnit || adUnit===`ca-app-pub-2259594031936212/${rule.adUnit}`) && item===rule.item && amount===String(rule.amount));
+  return {adUnit,transactionId,timestamp,signatureEncoding,configuredRewardMatched,digest:hashId(parsed.signedContent)};
+}
 export function verifyCallback(parsed:ParsedCallback,key:KeyObject,policies:RewardPolicy[],now=Date.now()):VerifiedReward {
   verifySignature(parsed,key);
   const p=parsed.params;
@@ -69,9 +90,7 @@ export function verifyCallback(parsed:ParsedCallback,key:KeyObject,policies:Rewa
   const rawTime=p.get('timestamp')!;
   // Google describes milliseconds but also publishes a 16-digit microsecond example.
   // Normalize these two explicit formats only; retain the same freshness/skew limits.
-  const eventTime=Number(rawTime);
-  const timestamp=rawTime.length===16?Math.floor(eventTime/1000):eventTime;
-  if(!/^(?:\d{13}|\d{16})$/.test(rawTime) || !Number.isSafeInteger(eventTime) || timestamp>now+CLOCK_SKEW_MS || timestamp<now-CALLBACK_MAX_AGE_MS) throw new SsvError('invalid_timestamp',403);
+  const timestamp=callbackTimestamp(rawTime,now);
   const transactionId=p.get('transaction_id')!;
   const uid=p.get('user_id')!;
   if(!/^[a-fA-F0-9]{16,256}$/.test(transactionId) || uid.length>128) throw new SsvError('invalid_reward_identity');

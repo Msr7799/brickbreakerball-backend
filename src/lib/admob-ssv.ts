@@ -3,7 +3,7 @@ import {MongoClient, type Db} from 'mongodb';
 import type {NextRequest} from 'next/server';
 import {gameFirebaseAuth} from './game-firebase-auth';
 import {googleRewardKey,probeGoogleRewardKeys} from './admob-ssv-keys';
-import {CLOCK_SKEW_MS, OPPORTUNITY_LIFETIME_MS, SsvError, hashId, isRequestId, opportunityId, parseCallback, rewardPolicies, verifyCallback, verifySignature, type AdPlacement, type VerifiedReward} from './admob-ssv-contract';
+import {CLOCK_SKEW_MS, OPPORTUNITY_LIFETIME_MS, SsvError, hashId, isRequestId, opportunityId, parseCallback, rewardPolicies, verifyCallback, verifyDiagnosticCallback, verifySignature, type AdPlacement, type VerifiedReward} from './admob-ssv-contract';
 
 type Opportunity={_id:string;uid:string;requestId:string;placement:AdPlacement;context:string;customData:string;createdAt:number;transactionId?:string;verifiedAt?:number;sdkEarnedAt?:number;clientDeliveredAt?:number;outcome?:string};
 type Receipt={_id:string;transactionId:string;opportunityId:string;uid:string;placement:AdPlacement;timestamp:number;verifiedAt:number;digest:string;mode:'observe';entitlement:{kind:'revive'|'standard_orb_and_upgrade_point';quantity:1}};
@@ -88,15 +88,17 @@ export async function callbackResponse(request:NextRequest){
     const raw=request.url.split('?',2)[1]||'';
     const parsed=parseCallback(raw);
     const key=await googleRewardKey(parsed.keyId);
-    const signatureEncoding=verifySignature(parsed,key); // Never bypass Google signature checks.
-    const reward=verifyCallback(parsed,key,rewardPolicies());
-    const {client,db}=await database();
-    // AdMob Verify URL can use these explicit diagnostic values. Never creates player rewards.
-    if(reward.uid==='ssv-diagnostic' && reward.customData==='ssv-diagnostic-v1'){
-      await db.collection('admob_ssv_diagnostics_v1').updateOne({_id:hashId(reward.transactionId) as never},{$setOnInsert:{verifiedAt:Date.now(),adUnit:reward.policy.adUnit,digest:reward.digest,signatureEncoding}},{upsert:true});
-      console.info('AdMob SSV diagnostic verified',signatureEncoding);
+    verifySignature(parsed,key); // Never bypass Google signature checks.
+    const policies=rewardPolicies();
+    const diagnostic=verifyDiagnosticCallback(parsed,key,policies);
+    if(diagnostic){
+      const {db}=await database();
+      await db.collection('admob_ssv_diagnostics_v1').updateOne({_id:hashId(`diagnostic:${diagnostic.adUnit}:${diagnostic.transactionId}`) as never},{$setOnInsert:{verifiedAt:Date.now(),adUnit:diagnostic.adUnit,digest:diagnostic.digest,signatureEncoding:diagnostic.signatureEncoding,configuredRewardMatched:diagnostic.configuredRewardMatched}},{upsert:true});
+      console.info('AdMob SSV diagnostic verified',diagnostic.signatureEncoding,diagnostic.configuredRewardMatched?'configured_reward':'sample_reward');
       return json({ok:true,diagnostic:true,rewardGranted:false});
     }
+    const reward=verifyCallback(parsed,key,policies);
+    const {client,db}=await database();
     const opportunities=db.collection<Opportunity>('admob_opportunities_v1');
     const receipts=db.collection<Receipt>('admob_entitlements_v1');
     const session=client.startSession();let duplicate=false;
@@ -146,7 +148,7 @@ export async function deliveryResponse(request:NextRequest){
 
 /** Public readiness contains only booleans, never player, database or credential details. */
 export async function healthResponse(){
-  let policyReady=false,keysReady=false,databaseReady=false,googleCallbackVerified=false;
+  let policyReady=false,keysReady=false,databaseReady=false,googleCallbackVerified=false,configuredRewardCallbackVerified=false;
   try{rewardPolicies();policyReady=true;}catch{/* Fail closed until actual unit settings are supplied. */}
   await Promise.all([
     probeGoogleRewardKeys().then(()=>{keysReady=true;}).catch(()=>{}),
@@ -154,10 +156,11 @@ export async function healthResponse(){
       await db.command({ping:1});
       const topology=await db.command({hello:1});
       databaseReady=!!topology.setName || topology.msg==='isdbgrid';
-      googleCallbackVerified=!!(await db.collection('admob_ssv_diagnostics_v1').findOne({},{projection:{_id:1}})) ||
-        !!(await db.collection('admob_entitlements_v1').findOne({},{projection:{_id:1}}));
+      const entitlement=await db.collection('admob_entitlements_v1').findOne({},{projection:{_id:1}});
+      googleCallbackVerified=!!entitlement || !!(await db.collection('admob_ssv_diagnostics_v1').findOne({},{projection:{_id:1}}));
+      configuredRewardCallbackVerified=!!entitlement || !!(await db.collection('admob_ssv_diagnostics_v1').findOne({configuredRewardMatched:true},{projection:{_id:1}}));
     }).catch(()=>{})
   ]);
   const ready=policyReady && keysReady && databaseReady;
-  return json({ok:ready,service:'admob-ssv',version:1,mode:'observe',policyReady,keysReady,databaseReady,deviceVerified:false,googleCallbackVerified},ready?200:503);
+  return json({ok:ready,service:'admob-ssv',version:1,mode:'observe',policyReady,keysReady,databaseReady,deviceVerified:false,googleCallbackVerified,configuredRewardCallbackVerified},ready?200:503);
 }

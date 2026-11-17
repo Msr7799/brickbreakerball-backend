@@ -25,24 +25,23 @@ export function rewardPolicies(env:NodeJS.ProcessEnv=process.env):RewardPolicy[]
 export type VerifiedReward = {
   transactionId:string; uid:string; customData:string; timestamp:number; policy:RewardPolicy; digest:string;
 };
-export type ParsedCallback = {signedContent:string; signature:Buffer; keyId:string; params:URLSearchParams};
+export type ParsedCallback = {wireContent:string; signedContent:string; signature:Buffer; keyId:string; params:URLSearchParams};
 
-/** Match Google's Tink URI.getQuery(): decode percent escapes once, keep order and literal '+'. */
+/** Keep transport bytes and one URL-form decoding; never reorder or reserialize fields. */
 export function parseCallback(rawQuery:string):ParsedCallback {
   if(!rawQuery || rawQuery.length>8192 || /[^\x21-\x7e]/.test(rawQuery) || /%(?![a-fA-F0-9]{2})/.test(rawQuery)) throw new SsvError('invalid_query');
   const marker=rawQuery.indexOf('&signature=');
   if(marker<1) throw new SsvError('missing_signature');
   const rawContent=rawQuery.slice(0,marker);
   // Decoded delimiters would make two different field layouts share a signed message.
-  // Our issued nonces and configured reward names never require '&' or '=' in values.
-  if(/%(?:26|3d)/i.test(rawContent)) throw new SsvError('ambiguous_query');
+  // Our issued nonces and configured reward names never require '&', '=' or '%' in values.
+  // Reject nested escapes too, so wire/decoded signatures cannot authorize a second decoding.
+  if(/%(?:25|26|3d)/i.test(rawContent)) throw new SsvError('ambiguous_query');
   let signedContent:string;
-  try{signedContent=decodeURIComponent(rawContent);}catch{throw new SsvError('invalid_query');}
+  try{signedContent=decodeURIComponent(rawContent.replace(/\+/g,'%20'));}catch{throw new SsvError('invalid_query');}
   const tail=/^signature=([A-Za-z0-9_-]{80,200}={0,2})&key_id=(\d{1,16})$/.exec(rawQuery.slice(marker+1));
   if(!tail) throw new SsvError('invalid_signature_fields');
-  // Form decoding turns '+' into a space; Java URI.getQuery() does not. Preserve it in both
-  // the authenticated message and the parsed values so re-encoding cannot change semantics.
-  const params=new URLSearchParams(rawQuery.replace(/\+/g,'%2B'));
+  const params=new URLSearchParams(rawQuery);
   const seen=new Set<string>();
   for(const [key,value] of params){
     if(seen.has(key) || !/^[a-z_]+$/.test(key) || value.length>2048 || /[\u0000-\u001f\u007f\ufffd]/.test(value)) throw new SsvError('ambiguous_query');
@@ -51,10 +50,15 @@ export function parseCallback(rawQuery:string):ParsedCallback {
   for(const key of ['ad_network','ad_unit','custom_data','reward_amount','reward_item','timestamp','transaction_id','user_id']) {
     if(!params.get(key)) throw new SsvError('missing_reward_fields');
   }
-  return {signedContent, signature:Buffer.from(tail[1],'base64url'),keyId:tail[2],params};
+  return {wireContent:rawContent,signedContent, signature:Buffer.from(tail[1],'base64url'),keyId:tail[2],params};
 }
-export function verifySignature(parsed:ParsedCallback,key:KeyObject):void {
-  if(key.asymmetricKeyType!=='ec' || !verify('sha256',Buffer.from(parsed.signedContent,'utf8'),{key,dsaEncoding:'der'},parsed.signature)) throw new SsvError('invalid_signature',403);
+export function verifySignature(parsed:ParsedCallback,key:KeyObject):'wire'|'decoded' {
+  if(key.asymmetricKeyType!=='ec') throw new SsvError('invalid_signature',403);
+  // Wire-encoded and decoded transports both require a valid Google ECDSA signature.
+  // In particular, URL-form '+' spaces must be decoded together with percent escapes.
+  if(verify('sha256',Buffer.from(parsed.wireContent,'utf8'),{key,dsaEncoding:'der'},parsed.signature)) return 'wire';
+  if(parsed.signedContent!==parsed.wireContent && verify('sha256',Buffer.from(parsed.signedContent,'utf8'),{key,dsaEncoding:'der'},parsed.signature)) return 'decoded';
+  throw new SsvError('invalid_signature',403);
 }
 export function verifyCallback(parsed:ParsedCallback,key:KeyObject,policies:RewardPolicy[],now=Date.now()):VerifiedReward {
   verifySignature(parsed,key);

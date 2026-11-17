@@ -88,12 +88,13 @@ export async function callbackResponse(request:NextRequest){
     const raw=request.url.split('?',2)[1]||'';
     const parsed=parseCallback(raw);
     const key=await googleRewardKey(parsed.keyId);
-    verifySignature(parsed,key); // Reject forged requests even while reward policy is unconfigured.
+    const signatureEncoding=verifySignature(parsed,key); // Never bypass Google signature checks.
     const reward=verifyCallback(parsed,key,rewardPolicies());
     const {client,db}=await database();
     // AdMob Verify URL can use these explicit diagnostic values. Never creates player rewards.
     if(reward.uid==='ssv-diagnostic' && reward.customData==='ssv-diagnostic-v1'){
-      await db.collection('admob_ssv_diagnostics_v1').updateOne({_id:hashId(reward.transactionId) as never},{$setOnInsert:{verifiedAt:Date.now(),adUnit:reward.policy.adUnit,digest:reward.digest}},{upsert:true});
+      await db.collection('admob_ssv_diagnostics_v1').updateOne({_id:hashId(reward.transactionId) as never},{$setOnInsert:{verifiedAt:Date.now(),adUnit:reward.policy.adUnit,digest:reward.digest,signatureEncoding}},{upsert:true});
+      console.info('AdMob SSV diagnostic verified',signatureEncoding);
       return json({ok:true,diagnostic:true,rewardGranted:false});
     }
     const opportunities=db.collection<Opportunity>('admob_opportunities_v1');

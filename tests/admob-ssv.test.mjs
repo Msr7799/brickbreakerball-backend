@@ -40,14 +40,33 @@ test('the actual Orb Reward Pack diagnostic accepts percent-encoded spaces with 
   assert.match(raw,/reward_item=Orb%20Reward%20Pack/);
   assert.equal(checked(raw).policy.placement,'orb');
 });
-test('literal plus has URI semantics and encoded delimiters cannot change signed field boundaries',()=>{
+test('literal plus cannot substitute an encoded plus in a signed reward name',()=>{
   const raw=query({reward_item:'orb + point'});
   const policy=[{placement:'revive',adUnit:'1402410648',item:'orb + point',amount:1}];
-  assert.equal(contract.verifyCallback(contract.parseCallback(raw.replace('%2B','+')),publicKey,policy,now).policy.item,'orb + point');
+  assert.throws(()=>contract.verifyCallback(contract.parseCallback(raw.replace('%2B','+')),publicKey,policy,now),/invalid_signature/);
+});
+test('encoded delimiters cannot change signed field boundaries',()=>{
   // A signer of one value must not authorize a different set of query fields.
   assert.throws(()=>contract.parseCallback(query({custom_data:'safe&reward_amount=2'})),/ambiguous_query/);
   assert.throws(()=>contract.parseCallback(query({custom_data:'safe=value'})),/ambiguous_query/);
-  assert.throws(()=>checked(query().replace('custom_data=','custom_data=%2526')),/invalid_signature/);
+  assert.throws(()=>checked(query().replace('custom_data=','custom_data=%2526')),/ambiguous_query/);
+});
+function transportQuery(mode,changes={}){
+  const original=query({ad_unit:'3630339929',reward_item:'Orb Reward Pack',user_id:'ssv-diagnostic',custom_data:'ssv-diagnostic-v1',...changes});
+  const raw=original.slice(0,original.indexOf('&signature='));
+  const wire=mode.includes('form')?raw.replace(/%20/g,'+'):raw;
+  const message=mode.startsWith('wire')?wire:decodeURIComponent(wire.replace(/\+/g,'%20'));
+  return `${wire}&signature=${sign('sha256',Buffer.from(message),privateKey).toString('base64url')}&key_id=7`;
+}
+test('both wire and decoded signatures handle percent and plus-space transports',()=>{
+  for(const mode of ['wire-percent','wire-form','decoded-percent','decoded-form']){
+    const raw=transportQuery(mode);
+    assert.equal(checked(raw).policy.placement,'orb',mode);
+    assert.equal(contract.verifySignature(contract.parseCallback(raw),publicKey),mode.startsWith('wire')?'wire':'decoded');
+    assert.throws(()=>checked(raw.replace('reward_amount=1','reward_amount=2')),/invalid_signature/);
+  }
+  assert.throws(()=>checked(transportQuery('wire-form').replace(/\+/g,'%2B')),/unexpected_reward/);
+  assert.throws(()=>checked(transportQuery('wire-percent').replace(/%20/g,'%2520')),/ambiguous_query/);
 });
 test('tampering, wrong signing key, duplicate fields and signature reordering are rejected',()=>{
   assert.throws(()=>checked(query().replace('reward_amount=1','reward_amount=2')),/invalid_signature/);
@@ -187,6 +206,16 @@ test('Orb Verify URL diagnostic accepts the actual percent-encoded reward item w
   assert.equal(collections.get('admob_entitlements_v1')?.size??0,0);
   const forged=await api.callbackResponse(callback(query({ad_unit:'3630339929',reward_item:'Orb Reward Pack',user_id:'ssv-diagnostic',custom_data:'ssv-diagnostic-v1'}).replace('Orb%20Reward%20Pack','Forged')));
   assert.equal(forged.status,403);
+});
+test('each signed transport reaches the real diagnostic handler without granting a player reward',async()=>{
+  for(const mode of ['wire-percent','wire-form','decoded-percent','decoded-form']){
+    const {api,collections}=handlers();
+    const response=await api.callbackResponse(callback(transportQuery(mode)));
+    assert.equal(response.status,200,mode);
+    assert.equal((await response.json()).rewardGranted,false);
+    assert.equal(collections.get('admob_entitlements_v1')?.size??0,0);
+    assert.equal([...collections.get('admob_ssv_diagnostics_v1').values()][0].signatureEncoding,mode.startsWith('wire')?'wire':'decoded');
+  }
 });
 test('opportunity issuance quota is atomic and leaves other players independent',async()=>{
   const {api}=handlers();

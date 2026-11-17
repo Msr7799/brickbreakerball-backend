@@ -20,7 +20,8 @@ test('new console enforces session and same-origin for actions',()=>{
 test('original MCP tools and Tavily search remain registered and auditable',()=>{
  const mcp=read('app/api/mcp/route.ts');
  assert.equal((mcp.match(/server\.registerTool\(/g)||[]).length,40);
- assert.match(mcp,/writeContext\.getStore\(\)/);\n assert.match(mcp,/recordMcpWriteIntent/);
+ assert.match(mcp,/writeContext\.getStore\(\)/);
+ assert.match(mcp,/recordMcpWriteIntent/);
  assert.match(mcp,/server\.registerTool\("tavily_search"/);
  assert.match(mcp,/writeAudit/);
  assert.match(read('src/lib/mcp-control.ts'),/writeAudit/);
@@ -44,7 +45,7 @@ test('AdSense and Pub/Sub management is guarded, read and write separated',()=>{
   assert.match(mcp,new RegExp('server\\.registerTool\\("'+name+'"'));
  }
  assert.match(adapter,/forgepulse-/);
- assert.match(adapter,/pushConfig\\?\\.pushEndpoint/);
+ assert.match(adapter,/pushConfig\?\.pushEndpoint/);
  assert.match(adapter,/productCode!=="AFC"/);
  assert.match(mcp,/mcp:write/);
  assert.match(mcp,/recordMcpWriteIntent/);

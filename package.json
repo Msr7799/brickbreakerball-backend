@@ -16,7 +16,7 @@
     "test": "pnpm test:logic && pnpm test:billing"
   },
   "engines": {
-    "node": ">=20.9.0"
+    "node": "24.x"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "^2.0.0",

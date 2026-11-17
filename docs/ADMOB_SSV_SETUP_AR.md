@@ -18,16 +18,16 @@
 
 | الغرض | الوحدة | قيمة Reward item | Reward amount |
 |---|---|---|---|
-| revive | `ca-app-pub-2259594031936212/1402410648` | يجب نقل النص الفعلي من إعدادات الوحدة | يجب نقل العدد الفعلي |
-| orb | `ca-app-pub-2259594031936212/3630339929` | يجب نقل النص الفعلي من إعدادات الوحدة | يجب نقل العدد الفعلي |
+| revive | `ca-app-pub-2259594031936212/1402410648` | `Revive` | `1` |
+| orb | `ca-app-pub-2259594031936212/3630339929` | `Orb Reward Pack` | `1` |
 
-أداة AdMob المتاحة تعرض الوحدة ونوعها، ولا تعرض حقلي المكافأة. لذلك **لا تُخمن القيم**. اضبط متغيرات Vercel التالية بالقيم الفعلية، ثم أعد النشر:
+أداة AdMob المتاحة تعرض الوحدة ونوعها، ولا تعرض حقلي المكافأة. المستخدم أرسل صور الإعدادات فأكدت القيم أعلاه؛ ضُبطت متغيرات Production في Vercel بهذه القيم دون تغيير AdMob:
 
 ```dotenv
-ADMOB_SSV_REVIVE_REWARD_ITEM=
-ADMOB_SSV_REVIVE_REWARD_AMOUNT=
-ADMOB_SSV_ORB_REWARD_ITEM=
-ADMOB_SSV_ORB_REWARD_AMOUNT=
+ADMOB_SSV_REVIVE_REWARD_ITEM=Revive
+ADMOB_SSV_REVIVE_REWARD_AMOUNT=1
+ADMOB_SSV_ORB_REWARD_ITEM=Orb Reward Pack
+ADMOB_SSV_ORB_REWARD_AMOUNT=1
 ```
 
 النص حساس لحالة الأحرف والمسافات. في غياب هذه القيم يبقى `policyReady=false` وتُرفض التذاكر الجديدة والـcallbacks، بينما يحافظ Android على مسار مكافأة SDK الحالي. `orb` في تذكرة السيرفر هو الغرض الداخلي، وقد يختلف عن النص الفعلي لحقل Reward item في AdMob.

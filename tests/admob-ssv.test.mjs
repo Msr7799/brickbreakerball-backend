@@ -7,7 +7,7 @@ import {generateKeyPairSync,sign} from 'node:crypto';
 import ts from 'typescript';
 
 const require=createRequire(import.meta.url);
-const env={MONGODB_URI:'mock://memory',MONGODB_DB:'ssv_test',ADMOB_SSV_REVIVE_REWARD_ITEM:'revive',ADMOB_SSV_REVIVE_REWARD_AMOUNT:'1',ADMOB_SSV_ORB_REWARD_ITEM:'orb',ADMOB_SSV_ORB_REWARD_AMOUNT:'1'};
+const env={MONGODB_URI:'mock://memory',MONGODB_DB:'ssv_test',ADMOB_SSV_REVIVE_REWARD_ITEM:'Revive',ADMOB_SSV_REVIVE_REWARD_AMOUNT:'1',ADMOB_SSV_ORB_REWARD_ITEM:'Orb Reward Pack',ADMOB_SSV_ORB_REWARD_AMOUNT:'1'};
 function load(name,mocks={}){
   const source=fs.readFileSync(new URL(`../src/lib/${name}.ts`,import.meta.url),'utf8');
   const js=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
@@ -21,14 +21,14 @@ const now=Date.now();
 const uid='firebase-player-a',requestId='ad-11111111-1111-4111-8111-111111111111';
 const customData='v1.revive.'+'a'.repeat(43);
 function query(changes={},key=privateKey){
-  const fields={ad_network:'5450213213286189855',ad_unit:'1402410648',custom_data:customData,reward_amount:'1',reward_item:'revive',timestamp:String(now),transaction_id:'abc123def4567890abc123def4567890',user_id:uid,...changes};
+  const fields={ad_network:'5450213213286189855',ad_unit:'1402410648',custom_data:customData,reward_amount:'1',reward_item:'Revive',timestamp:String(now),transaction_id:'abc123def4567890abc123def4567890',user_id:uid,...changes};
   const content=new URLSearchParams(fields).toString();
   return `${content}&signature=${sign('sha256',Buffer.from(content),key).toString('base64url')}&key_id=7`;
 }
 function checked(raw=query()){return contract.verifyCallback(contract.parseCallback(raw),publicKey,contract.rewardPolicies(env),now);}
 test('valid ECDSA DER/SHA256 verifies the exact raw URL-encoded content',()=>{
   assert.equal(checked().uid,uid);
-  assert.equal(checked(query({reward_item:'revive'})).policy.placement,'revive');
+  assert.equal(checked(query({reward_item:'Revive'})).policy.placement,'revive');
   const policy=[{placement:'orb',adUnit:'3630339929',item:'orb + point',amount:1}];
   const parsed=contract.parseCallback(query({ad_unit:'3630339929',reward_item:'orb + point'}));
   assert.match(parsed.signedContent,/orb\+%2B\+point/);
@@ -132,7 +132,7 @@ test('concurrent duplicate callbacks create one entitlement; another transaction
 });
 test('server-issued nonce, placement, UID and opportunity time are all bound',async()=>{
   const {api,collections}=handlers(),ticket=await prepared(api);
-  for(const changes of [{user_id:'firebase-player-b'},{custom_data:'v1.revive.forged'},{ad_unit:'3630339929',reward_item:'orb'}]){
+  for(const changes of [{user_id:'firebase-player-b'},{custom_data:'v1.revive.forged'},{ad_unit:'3630339929',reward_item:'Orb Reward Pack'}]){
     assert.equal((await api.callbackResponse(callback(query({custom_data:ticket.customData,...changes})))).status,403);
   }
   const row=[...collections.get('admob_opportunities_v1').values()][0];row.createdAt=now-3*3600000;

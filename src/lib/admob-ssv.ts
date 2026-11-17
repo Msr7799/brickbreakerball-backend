@@ -3,7 +3,7 @@ import {MongoClient, type Db} from 'mongodb';
 import type {NextRequest} from 'next/server';
 import {gameFirebaseAuth} from './game-firebase-auth';
 import {googleRewardKey,probeGoogleRewardKeys} from './admob-ssv-keys';
-import {CLOCK_SKEW_MS, OPPORTUNITY_LIFETIME_MS, SsvError, hashId, isRequestId, opportunityId, parseCallback, rewardPolicies, verifyCallback, type AdPlacement, type VerifiedReward} from './admob-ssv-contract';
+import {CLOCK_SKEW_MS, OPPORTUNITY_LIFETIME_MS, SsvError, hashId, isRequestId, opportunityId, parseCallback, rewardPolicies, verifyCallback, verifySignature, type AdPlacement, type VerifiedReward} from './admob-ssv-contract';
 
 type Opportunity={_id:string;uid:string;requestId:string;placement:AdPlacement;context:string;customData:string;createdAt:number;transactionId?:string;verifiedAt?:number;sdkEarnedAt?:number;clientDeliveredAt?:number;outcome?:string};
 type Receipt={_id:string;transactionId:string;opportunityId:string;uid:string;placement:AdPlacement;timestamp:number;verifiedAt:number;digest:string;mode:'observe';entitlement:{kind:'revive'|'standard_orb_and_upgrade_point';quantity:1}};
@@ -87,7 +87,9 @@ export async function callbackResponse(request:NextRequest){
   try{
     const raw=request.url.split('?',2)[1]||'';
     const parsed=parseCallback(raw);
-    const reward=verifyCallback(parsed,await googleRewardKey(parsed.keyId),rewardPolicies());
+    const key=await googleRewardKey(parsed.keyId);
+    verifySignature(parsed,key); // Reject forged requests even while reward policy is unconfigured.
+    const reward=verifyCallback(parsed,key,rewardPolicies());
     const {client,db}=await database();
     // AdMob Verify URL can use these explicit diagnostic values. Never creates player rewards.
     if(reward.uid==='ssv-diagnostic' && reward.customData==='ssv-diagnostic-v1'){

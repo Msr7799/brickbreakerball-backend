@@ -46,8 +46,11 @@ export function parseCallback(rawQuery:string):ParsedCallback {
   }
   return {signedContent, signature:Buffer.from(tail[1],'base64url'),keyId:tail[2],params};
 }
-export function verifyCallback(parsed:ParsedCallback,key:KeyObject,policies:RewardPolicy[],now=Date.now()):VerifiedReward {
+export function verifySignature(parsed:ParsedCallback,key:KeyObject):void {
   if(key.asymmetricKeyType!=='ec' || !verify('sha256',Buffer.from(parsed.signedContent,'utf8'),{key,dsaEncoding:'der'},parsed.signature)) throw new SsvError('invalid_signature',403);
+}
+export function verifyCallback(parsed:ParsedCallback,key:KeyObject,policies:RewardPolicy[],now=Date.now()):VerifiedReward {
+  verifySignature(parsed,key);
   const p=parsed.params;
   const unit=p.get('ad_unit')!;
   const policy=policies.find(rule=>unit===rule.adUnit || unit===`ca-app-pub-2259594031936212/${rule.adUnit}`);

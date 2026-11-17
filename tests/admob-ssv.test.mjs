@@ -22,17 +22,32 @@ const uid='firebase-player-a',requestId='ad-11111111-1111-4111-8111-111111111111
 const customData='v1.revive.'+'a'.repeat(43);
 function query(changes={},key=privateKey){
   const fields={ad_network:'5450213213286189855',ad_unit:'1402410648',custom_data:customData,reward_amount:'1',reward_item:'Revive',timestamp:String(now),transaction_id:'abc123def4567890abc123def4567890',user_id:uid,...changes};
-  const content=new URLSearchParams(fields).toString();
-  return `${content}&signature=${sign('sha256',Buffer.from(content),key).toString('base64url')}&key_id=7`;
+  // Match URI.getQuery() in Google's Tink verifier: percent-decode once, preserve literal '+'.
+  const content=Object.entries(fields).map(([k,v])=>`${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
+  return `${content}&signature=${sign('sha256',Buffer.from(decodeURIComponent(content)),key).toString('base64url')}&key_id=7`;
 }
 function checked(raw=query()){return contract.verifyCallback(contract.parseCallback(raw),publicKey,contract.rewardPolicies(env),now);}
-test('valid ECDSA DER/SHA256 verifies the exact raw URL-encoded content',()=>{
+test('valid ECDSA DER/SHA256 matches Google URI.getQuery percent decoding',()=>{
   assert.equal(checked().uid,uid);
   assert.equal(checked(query({reward_item:'Revive'})).policy.placement,'revive');
   const policy=[{placement:'orb',adUnit:'3630339929',item:'orb + point',amount:1}];
   const parsed=contract.parseCallback(query({ad_unit:'3630339929',reward_item:'orb + point'}));
-  assert.match(parsed.signedContent,/orb\+%2B\+point/);
+  assert.match(parsed.signedContent,/orb \+ point/);
   assert.equal(contract.verifyCallback(parsed,publicKey,policy,now).policy.placement,'orb');
+});
+test('the actual Orb Reward Pack diagnostic accepts percent-encoded spaces with a decoded signature',()=>{
+  const raw=query({ad_unit:'3630339929',reward_item:'Orb Reward Pack',user_id:'ssv-diagnostic',custom_data:'ssv-diagnostic-v1'});
+  assert.match(raw,/reward_item=Orb%20Reward%20Pack/);
+  assert.equal(checked(raw).policy.placement,'orb');
+});
+test('literal plus has URI semantics and encoded delimiters cannot change signed field boundaries',()=>{
+  const raw=query({reward_item:'orb + point'});
+  const policy=[{placement:'revive',adUnit:'1402410648',item:'orb + point',amount:1}];
+  assert.equal(contract.verifyCallback(contract.parseCallback(raw.replace('%2B','+')),publicKey,policy,now).policy.item,'orb + point');
+  // A signer of one value must not authorize a different set of query fields.
+  assert.throws(()=>contract.parseCallback(query({custom_data:'safe&reward_amount=2'})),/ambiguous_query/);
+  assert.throws(()=>contract.parseCallback(query({custom_data:'safe=value'})),/ambiguous_query/);
+  assert.throws(()=>checked(query().replace('custom_data=','custom_data=%2526')),/invalid_signature/);
 });
 test('tampering, wrong signing key, duplicate fields and signature reordering are rejected',()=>{
   assert.throws(()=>checked(query().replace('reward_amount=1','reward_amount=2')),/invalid_signature/);
@@ -45,6 +60,12 @@ test('tampering, wrong signing key, duplicate fields and signature reordering ar
 test('a signed callback cannot substitute the unit, reward amount, item, UID shape or clock',()=>{
   for(const fields of [{ad_unit:'1043011477'},{reward_amount:'2'},{reward_item:'coins'},{timestamp:String(now+301000)},{timestamp:String(now-86400001)},{timestamp:'150777823'},{transaction_id:'../forged'}]) assert.throws(()=>checked(query(fields)));
   assert.throws(()=>contract.rewardPolicies({}),/reward_policy_not_configured/);
+});
+test('Google millisecond and microsecond timestamps share the same strict freshness window',()=>{
+  assert.equal(checked(query({timestamp:String(now*1000+999)})).timestamp,now);
+  for(const value of [(now+301000)*1000,(now-86400001)*1000,Math.floor(now/1000),now*1000000]) {
+    assert.throws(()=>checked(query({timestamp:String(value)})),/invalid_timestamp/);
+  }
 });
 test('unknown key content cannot become a trusted key set',()=>{
   assert.throws(()=>contract.parseGoogleKeys({keys:[]}));
@@ -156,6 +177,16 @@ test('Verify URL diagnostic verifies Google signature but creates no player enti
   assert.equal(response.status,200);assert.equal((await response.json()).diagnostic,true);
   assert.equal(collections.get('admob_ssv_diagnostics_v1').size,1);
   assert.equal(collections.get('admob_entitlements_v1')?.size??0,0);
+});
+test('Orb Verify URL diagnostic accepts the actual percent-encoded reward item without granting',async()=>{
+  const {api,collections}=handlers();
+  const response=await api.callbackResponse(callback(query({ad_unit:'3630339929',reward_item:'Orb Reward Pack',user_id:'ssv-diagnostic',custom_data:'ssv-diagnostic-v1',timestamp:String(now*1000)})));
+  assert.equal(response.status,200);
+  assert.equal((await response.json()).rewardGranted,false);
+  assert.equal(collections.get('admob_ssv_diagnostics_v1').size,1);
+  assert.equal(collections.get('admob_entitlements_v1')?.size??0,0);
+  const forged=await api.callbackResponse(callback(query({ad_unit:'3630339929',reward_item:'Orb Reward Pack',user_id:'ssv-diagnostic',custom_data:'ssv-diagnostic-v1'}).replace('Orb%20Reward%20Pack','Forged')));
+  assert.equal(forged.status,403);
 });
 test('opportunity issuance quota is atomic and leaves other players independent',async()=>{
   const {api}=handlers();

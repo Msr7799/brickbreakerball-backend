@@ -114,7 +114,12 @@ export async function callbackResponse(request:NextRequest){
     },{writeConcern:{w:'majority'},readConcern:{level:'snapshot'}});}finally{await session.endSession();}
     // Google retries non-200. Replays are acknowledged but never create another entitlement.
     return json({ok:true,duplicate,mode:'observe',rewardGranted:false});
-  }catch(error){return responseError(error);}
+  }catch(error){
+    // A reason code is sufficient for production diagnosis. Never log the signed URL,
+    // signature, custom data, player identity or request headers.
+    if(error instanceof SsvError) console.warn('AdMob SSV callback rejected',error.code);
+    return responseError(error);
+  }
 }
 
 export async function statusResponse(request:NextRequest){

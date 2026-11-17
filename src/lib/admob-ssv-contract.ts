@@ -27,15 +27,22 @@ export type VerifiedReward = {
 };
 export type ParsedCallback = {signedContent:string; signature:Buffer; keyId:string; params:URLSearchParams};
 
-/** Preserve signed bytes. URLSearchParams must never reserialize the signed payload. */
+/** Match Google's Tink URI.getQuery(): decode percent escapes once, keep order and literal '+'. */
 export function parseCallback(rawQuery:string):ParsedCallback {
   if(!rawQuery || rawQuery.length>8192 || /[^\x21-\x7e]/.test(rawQuery) || /%(?![a-fA-F0-9]{2})/.test(rawQuery)) throw new SsvError('invalid_query');
   const marker=rawQuery.indexOf('&signature=');
   if(marker<1) throw new SsvError('missing_signature');
-  const signedContent=rawQuery.slice(0,marker);
+  const rawContent=rawQuery.slice(0,marker);
+  // Decoded delimiters would make two different field layouts share a signed message.
+  // Our issued nonces and configured reward names never require '&' or '=' in values.
+  if(/%(?:26|3d)/i.test(rawContent)) throw new SsvError('ambiguous_query');
+  let signedContent:string;
+  try{signedContent=decodeURIComponent(rawContent);}catch{throw new SsvError('invalid_query');}
   const tail=/^signature=([A-Za-z0-9_-]{80,200}={0,2})&key_id=(\d{1,16})$/.exec(rawQuery.slice(marker+1));
   if(!tail) throw new SsvError('invalid_signature_fields');
-  const params=new URLSearchParams(rawQuery);
+  // Form decoding turns '+' into a space; Java URI.getQuery() does not. Preserve it in both
+  // the authenticated message and the parsed values so re-encoding cannot change semantics.
+  const params=new URLSearchParams(rawQuery.replace(/\+/g,'%2B'));
   const seen=new Set<string>();
   for(const [key,value] of params){
     if(seen.has(key) || !/^[a-z_]+$/.test(key) || value.length>2048 || /[\u0000-\u001f\u007f\ufffd]/.test(value)) throw new SsvError('ambiguous_query');
@@ -56,8 +63,11 @@ export function verifyCallback(parsed:ParsedCallback,key:KeyObject,policies:Rewa
   const policy=policies.find(rule=>unit===rule.adUnit || unit===`ca-app-pub-2259594031936212/${rule.adUnit}`);
   if(!policy || p.get('reward_item')!==policy.item || p.get('reward_amount')!==String(policy.amount)) throw new SsvError('unexpected_reward',403);
   const rawTime=p.get('timestamp')!;
-  const timestamp=Number(rawTime);
-  if(!/^\d{13}$/.test(rawTime) || !Number.isSafeInteger(timestamp) || timestamp>now+CLOCK_SKEW_MS || timestamp<now-CALLBACK_MAX_AGE_MS) throw new SsvError('invalid_timestamp',403);
+  // Google describes milliseconds but also publishes a 16-digit microsecond example.
+  // Normalize these two explicit formats only; retain the same freshness/skew limits.
+  const eventTime=Number(rawTime);
+  const timestamp=rawTime.length===16?Math.floor(eventTime/1000):eventTime;
+  if(!/^(?:\d{13}|\d{16})$/.test(rawTime) || !Number.isSafeInteger(eventTime) || timestamp>now+CLOCK_SKEW_MS || timestamp<now-CALLBACK_MAX_AGE_MS) throw new SsvError('invalid_timestamp',403);
   const transactionId=p.get('transaction_id')!;
   const uid=p.get('user_id')!;
   if(!/^[a-fA-F0-9]{16,256}$/.test(transactionId) || uid.length>128) throw new SsvError('invalid_reward_identity');

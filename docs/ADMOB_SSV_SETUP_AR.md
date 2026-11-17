@@ -34,9 +34,10 @@ ADMOB_SSV_ORB_REWARD_AMOUNT=1
 
 ## الأمان والحفظ
 
-- توقيع ECDSA/SHA-256 بصيغة DER على نص query الأصلي؛ لا إعادة ترتيب أو إعادة ترميز قبل التحقق.
+- توقيع ECDSA/SHA-256 بصيغة DER وفق مرجع Google/Tink: فك percent-encoding مرة واحدة مثل Java `URI.getQuery()`، مع حفظ ترتيب الحقول وحرف `+` كما هو، دون إعادة تسلسل query أو استخدام form decoding للنص الموقّع. تُرفض فواصل الحقول المرمّزة لمنع التباس البنية.
 - مفاتيح من عنوان Google HTTPS ثابت فقط، مع منع التحويلات ومهلة اتصال وتحديث خلال 23 ساعة وتجديد عند key_id جديد بضبط معدل الطلبات.
 - رفض حقول query المكررة، التوقيع المزور، الوحدة غير المصرح بها، اختلاف العدد أو نوع المكافأة، الوقت المستقبلي بأكثر من 5 دقائق أو الأقدم من 24 ساعة، ومعرف العملية غير الصالح.
+- يُقبل timestamp بصيغة milliseconds من 13 رقمًا أو microseconds من 16 رقمًا كما في مثال Google، ثم يُحوّل إلى milliseconds مع نفس حدود العمر والانحراف؛ لا تُقبل الثواني أو nanoseconds.
 - `custom_data=v1.<placement>.<nonce>` يصدر من السيرفر ويرتبط بـFirebase UID والسياق. الحدث يجب أن يكون خلال ساعتين من إصدار التذكرة؛ يمكن أن يصل callback متأخرًا خلال نافذة قبول الوقت.
 - `transaction_id` عالمي فريد عبر `_id` مشتق منه، ومعاملة MongoDB ذرية تربط التذكرة والاستحقاق. لا يمكن استهلاك التذكرة بمعرف عملية آخر. إعادة الطلب نفسه تُرجع HTTP 200 مع `duplicate=true` ولا تضيف استحقاقًا ثانيًا، لتجنب إعادة إرسال Google المستمرة.
 - MongoDB: `admob_opportunities_v1` للتذاكر والتسليم؛ `admob_entitlements_v1` للاستحقاقات الموقعة؛ `admob_ssv_diagnostics_v1` لفحوص Google دون منح؛ `admob_issuance_v1` لحصة إصدار التذاكر، وتحذف سجلات الحصة المؤقتة فقط بعد انتهاء صلاحيتها. سجلات الاستحقاقات دائمة.
@@ -60,6 +61,14 @@ ADMOB_SSV_ORB_REWARD_AMOUNT=1
 في أداة Verify URL داخل AdMob، استخدم المسار الحقيقي أعلاه. إذا أتاحت الأداة User ID وCustom data، استخدم `ssv-diagnostic` و`ssv-diagnostic-v1`، مع العدد والنوع المطابقين للوحدة. يتطلب المسار توقيع Google حتى في هذا الفحص؛ لا يوجد bypass أو مفتاح اختبار منشور. يُحفظ دليل التحقق دون مكافأة لاعب. إذا لم تتيح الأداة إرسال هذين الحقلين، اختبر إعلان QA بتذكرة حقيقية أولًا، ولا تضعف التحقق لقبول طلب بلا هوية.
 
 بعد نجاح Verify URL: Use verified URL ثم Save، وكرر للوحدتين. هذا عمل المستخدم، ولم تُغيّر إعدادات AdMob في هذه المهمة.
+
+### إصلاح رفض 403 عند التحقق من وحدة التمائم — 2026-11-17
+
+أظهر الاختبار المطابق لمرجع Google أن التحقق القديم من query المرمّز يرفض توقيعًا صحيحًا لاسم `Orb Reward Pack` يحتوي مسافات. صُحح التحقق لاتباع `URI.getQuery()`، وأُضيفت اختبارات للمسافات و`+` والفواصل المرمّزة وصيغ الوقت، مع الإبقاء على التوقيع وسياسة المكافأة وربط اللاعب ومنع التكرار. قبل التصحيح فشل اختبار اسم المكافأة برمز `invalid_signature`/403، وبعده نجح.
+
+المصدر الأولي: [مرجع Google/Tink](https://github.com/tink-crypto/tink-java-apps/blob/main/rewardedads/src/main/java/com/google/crypto/tink/apps/rewardedads/RewardedAdsVerifier.java) و[اختبار Encoded URL الرسمي](https://github.com/tink-crypto/tink-java-apps/blob/main/rewardedads/src/test/java/com/google/crypto/tink/apps/rewardedads/RewardedAdsVerifierTest.java).
+
+تسجل أخطاء callback الآن رمز السبب فقط، دون الرابط أو التوقيع أو بيانات اللاعب. السجلات السابقة لم تتضمن سبب رفض الطلب في الصورة؛ مطابقة الإصلاح لحالة اختبار Google مثبتة، أما نجاح طلب Google الفعلي فيتطلب إعادة Verify URL بعد النشر.
 
 ## أدلة الفحص وحدودها
 

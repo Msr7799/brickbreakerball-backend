@@ -52,6 +52,7 @@ test("Play Console permission audit reads only current Play caller and protects 
  const core=read("../src/lib/play-admin.ts");
  assert.match(core,/function playCallerPermissions\(/);
  assert.match(core,/GOOGLE_PLAY_DEVELOPER_ID/);
+ assert.match(core,/\{pageSize:-1\}/);
  assert.match(core,/identity\.clientEmail\.toLowerCase\(\)/);
  assert.match(core,/CAN_MANAGE_PERMISSIONS_GLOBAL/);
  assert.match(core,/CAN_MANAGE_PUBLIC_LISTING_GLOBAL/);

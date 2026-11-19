@@ -44,7 +44,18 @@ test("Google Play credential identity and structured Google error reasons are di
  assert.match(google,/error\?\.errors/);
  assert.match(google,/\[redacted\]/);
  assert.match(mcp,/playCaller:/);
+ assert.match(mcp,/playPermissions:/);
  assert.doesNotMatch(mcp,/private_key/);
+});
+
+test("Play Console permission audit reads only current Play caller and protects an active edit",()=>{
+ const core=read("../src/lib/play-admin.ts");
+ assert.match(core,/function playCallerPermissions\(/);
+ assert.match(core,/GOOGLE_PLAY_DEVELOPER_ID/);
+ assert.match(core,/identity\.clientEmail\.toLowerCase\(\)/);
+ assert.match(core,/CAN_MANAGE_PERMISSIONS_GLOBAL/);
+ assert.match(core,/CAN_MANAGE_PUBLIC_LISTING_GLOBAL/);
+ assert.match(core,/An active Google Play edit is being preserved/);
 });
 
 test("Google API permission errors expose structured reasons but redact bearer tokens",()=>{

@@ -116,10 +116,10 @@ async function analyticsContext():Promise<{propertyId:string;streamId?:string}>{
  return {propertyId:id,streamId};
 }
 /** Restrict Data API queries to the Firebase Android stream where mapping is available. */
-export async function analyticsReport(kind:"overview"|"events"|"versions",days:number,limit=20){
+export async function analyticsReport(kind:"overview"|"summary"|"events"|"versions",days:number,limit=20){
  const {propertyId,streamId}=await analyticsContext();
- const dimensions=kind==="overview"?["date"]:kind==="events"?["eventName"]:["appVersion"];
- const metrics=kind==="overview"?["activeUsers","newUsers","sessions","eventCount"]:kind==="events"?["eventCount","activeUsers"]:["activeUsers","eventCount"];
+ const dimensions=kind==="summary"?[]:kind==="overview"?["date"]:kind==="events"?["eventName"]:["appVersion"];
+ const metrics=kind==="overview"||kind==="summary"?["activeUsers","newUsers","sessions","eventCount"]:kind==="events"?["eventCount","activeUsers"]:["activeUsers","eventCount"];
  const body:Record<string,unknown>={
   dateRanges:[{startDate:`${days-1}daysAgo`,endDate:"today"}],
   dimensions:dimensions.map(name=>({name})),
@@ -128,7 +128,7 @@ export async function analyticsReport(kind:"overview"|"events"|"versions",days:n
   keepEmptyRows:false
  };
  if(streamId)body.dimensionFilter={filter:{fieldName:"streamId",stringFilter:{matchType:"EXACT",value:streamId}}};
- if(kind!=="overview")body.orderBys=[{metric:{metricName:kind==="events"?"eventCount":"activeUsers"},desc:true}];
+ if(kind==="events"||kind==="versions")body.orderBys=[{metric:{metricName:kind==="events"?"eventCount":"activeUsers"},desc:true}];
  let data:unknown;
  try{
   data=await googleRequest(`https://analyticsdata.googleapis.com/v1beta/properties/${propertyId}:runReport`,await insightsToken("analytics"),"POST",body);

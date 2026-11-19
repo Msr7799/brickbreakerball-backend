@@ -131,7 +131,7 @@ export async function playCallerPermissions(){
  const developerId=process.env.GOOGLE_PLAY_DEVELOPER_ID?.trim();
  if(!developerId||!/^\d{12,22}$/.test(developerId))return {ok:false,reason:"GOOGLE_PLAY_DEVELOPER_ID is not configured"};
  const identity=googleServiceAccountIdentity();
- const response=await googleGet(`https://androidpublisher.googleapis.com/androidpublisher/v3/developers/${developerId}/users`,await googleToken("play"),{pageSize:100}) as {
+ const response=await googleGet(`https://androidpublisher.googleapis.com/androidpublisher/v3/developers/${developerId}/users`,await googleToken("play"),{pageSize:-1}) as {
   users?:Array<{email?:string;accessState?:string;partial?:boolean;developerAccountPermissions?:string[];grants?:Array<{name?:string;appLevelPermissions?:string[]}>}>;nextPageToken?:string;
  };
  const caller=response.users?.find(user=>user.email?.toLowerCase()===identity.clientEmail.toLowerCase());

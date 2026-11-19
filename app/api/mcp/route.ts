@@ -12,7 +12,7 @@ import {searchTavily} from "../../../src/lib/tavily";
 import {analyticsCredentialIdentity,crashlyticsListReports,crashlyticsGetReport,crashlyticsGetIssue,crashlyticsListEvents,analyticsReport,crashlyticsListNotes,crashlyticsUpdateIssue,crashlyticsCreateNote,crashlyticsDeleteNote,analyticsListKeyEvents,analyticsCreateKeyEvent,analyticsUpdateKeyEvent,analyticsDeleteKeyEvent} from "../../../src/lib/game-insights";
 import {oauthEnabled} from "../../../src/lib/mcp-oauth-helpers";
 import {verifyMcpOauthAccess,oauthChallenge} from "../../../src/lib/mcp-oauth";
-import {playLanguage,playEditId,playImageType,playListingFields,playDetailsFields,playBeginEdit,playListListings,playGetListing,playPatchListing,playGetDetails,playPatchDetails,playListImages,playDeleteImage,playUploadImage,playListTracks,playGetTrack,playValidateEdit,playCommitEdit,playReplyReview,playAccessDiagnostic} from "../../../src/lib/play-admin";
+import {playLanguage,playEditId,playImageType,playListingFields,playDetailsFields,playBeginEdit,playListListings,playGetListing,playPatchListing,playGetDetails,playPatchDetails,playListImages,playDeleteImage,playUploadImage,playListTracks,playGetTrack,playValidateEdit,playCommitEdit,playReplyReview,playAccessDiagnostic,playCallerPermissions} from "../../../src/lib/play-admin";
 
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
@@ -49,6 +49,7 @@ const handler=createMcpHandler((server)=>{
   firebase:!!(process.env.FIREBASE_DATABASE_URL&&(process.env.FIREBASE_SERVICE_ACCOUNT_JSON||process.env.GOOGLE_SERVICE_ACCOUNT_JSON)),
   play:!!(process.env.GOOGLE_SERVICE_ACCOUNT_JSON&&process.env.ANDROID_PACKAGE_NAME),
   playCaller:(()=>{try{return googleServiceAccountIdentity();}catch{return {error:"Google Play service-account identity unavailable"};}})(),
+  playPermissions:await (async()=>{try{return await playCallerPermissions();}catch(e){return {ok:false,error:e instanceof Error?e.message.slice(0,350):"Play permissions probe failed"};}})(),
   cloud:!!(process.env.GOOGLE_SERVICE_ACCOUNT_JSON&&process.env.GOOGLE_CLOUD_PROJECT_ID),
   admob:!!((process.env.GOOGLE_ADMOB_REFRESH_TOKEN||process.env.GOOGLE_OAUTH_REFRESH_TOKEN)&&process.env.GOOGLE_OAUTH_CLIENT_ID&&process.env.GOOGLE_OAUTH_CLIENT_SECRET),
   adsense:!!((process.env.GOOGLE_ADSENSE_REFRESH_TOKEN||process.env.GOOGLE_OAUTH_REFRESH_TOKEN)&&process.env.GOOGLE_OAUTH_CLIENT_ID&&process.env.GOOGLE_OAUTH_CLIENT_SECRET),

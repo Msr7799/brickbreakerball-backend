@@ -8,6 +8,34 @@ const serviceScopes={
  analytics:["https://www.googleapis.com/auth/analytics.readonly"]
 } as const;
 
+/** Non-secret identity of the exact service account used by Google Play/Cloud calls. */
+export function googleServiceAccountIdentity():{clientEmail:string;projectId:string;source:"GOOGLE_SERVICE_ACCOUNT_JSON"}{
+ let credentials:unknown;
+ try{credentials=JSON.parse(assertEnv("GOOGLE_SERVICE_ACCOUNT_JSON"));}
+ catch{throw new Error("Invalid GOOGLE_SERVICE_ACCOUNT_JSON: expected a service-account JSON object");}
+ const account=credentials as {client_email?:unknown;project_id?:unknown}|null;
+ if(!account||typeof account!=="object"||typeof account.client_email!=="string"||!account.client_email.endsWith(".gserviceaccount.com")){
+  throw new Error("GOOGLE_SERVICE_ACCOUNT_JSON has no valid service-account email");
+ }
+ return {clientEmail:account.client_email,projectId:typeof account.project_id==="string"?account.project_id:"unknown",source:"GOOGLE_SERVICE_ACCOUNT_JSON"};
+}
+
+/** Retain only Google error fields needed for permission diagnosis; never return tokens or raw details. */
+export function googleApiErrorMessage(httpStatus:number,payload:unknown,fallback:string):string{
+ const response=payload as {error?:{message?:unknown;status?:unknown;errors?:Array<{reason?:unknown;domain?:unknown}>;details?:Array<{reason?:unknown;domain?:unknown;metadata?:{permission?:unknown;service?:unknown;method?:unknown}}>}}|null;
+ const error=response?.error;
+ const safe=(value:unknown,limit=100)=>typeof value==="string"?value.slice(0,limit).replace(/Bearer\s+\S+|ya29\.[A-Za-z0-9._-]+|-----BEGIN[^\n]*PRIVATE KEY-----/gi,"[redacted]"):"";
+ const status=safe(error?.status,70);
+ const message=safe(error?.message,700)||safe(fallback,100);
+ const legacyReasons=Array.isArray(error?.errors)?error.errors:[];
+ const detailedReasons=Array.isArray(error?.details)?error.details:[];
+ const reasons=[...legacyReasons.map(e=>safe(e?.reason,100)),...detailedReasons.map(d=>safe(d?.reason,100))].filter(Boolean);
+ const firstDetail=detailedReasons.find(d=>d&&typeof d.reason==="string");
+ const metadata=firstDetail?.metadata;
+ const context=[metadata?.permission?`permission=${safe(metadata.permission)}`:"",metadata?.service?`service=${safe(metadata.service)}`:"",metadata?.method?`method=${safe(metadata.method)}`:""].filter(Boolean);
+ return `Google API HTTP ${httpStatus}${status?` (${status})`:""}: ${message}${reasons.length?`; reasons: ${[...new Set(reasons)].slice(0,4).join(", ")}`:""}${context.length?`; ${context.join(", ")}`:""}`;
+}
+
 export async function googleToken(service:"play"|"cloud"|"analytics"):Promise<string> {
  const raw=assertEnv("GOOGLE_SERVICE_ACCOUNT_JSON");
  let credentials:object;
@@ -48,8 +76,6 @@ export async function googleRequest(endpoint:string,token:string,method:"GET"|"P
  const raw=await result.text();
  let data:unknown;
  try{data=JSON.parse(raw);}catch{data={message:raw.slice(0,1000)};}
- if(!result.ok){const error=data as {error?:{message?:string;status?:string}};
-  throw new Error(`Google API HTTP ${result.status}: ${error?.error?.message?.slice(0,700)||result.statusText}`);
- }
+ if(!result.ok)throw new Error(googleApiErrorMessage(result.status,data,result.statusText));
  return data;
 }

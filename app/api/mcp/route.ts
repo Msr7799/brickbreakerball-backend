@@ -3,7 +3,7 @@ import {AsyncLocalStorage} from "node:async_hooks";
 import {z} from "zod";
 import {getBearer,tokenMatches,assertEnv,validateDateRange,dateObject,validateResource} from "../../../src/lib/security";
 import {firebaseRead} from "../../../src/lib/firebase";
-import {googleGet,googleRequest,googleToken,oauthToken} from "../../../src/lib/google";
+import {googleGet,googleRequest,googleToken,oauthToken,googleServiceAccountIdentity} from "../../../src/lib/google";
 import {writeAudit,toolsMeta} from "../../../src/lib/mcp-control";
 import {pubsubCreateTopic,pubsubCreatePullSubscription,pubsubUpdatePullAckDeadline,admobCreateAdUnit,adsenseListAlerts,adsenseListPolicyIssues,adsenseListPayments,adsenseListAdClients,adsenseCreateDisplayAdUnit} from "../../../src/lib/monetization-admin";
 import {monetizationReadinessAudit} from "../../../src/lib/monetization-diagnostics";
@@ -48,6 +48,7 @@ const handler=createMcpHandler((server)=>{
   writeEnabled:process.env.MCP_WRITE_ENABLED==="true",
   firebase:!!(process.env.FIREBASE_DATABASE_URL&&(process.env.FIREBASE_SERVICE_ACCOUNT_JSON||process.env.GOOGLE_SERVICE_ACCOUNT_JSON)),
   play:!!(process.env.GOOGLE_SERVICE_ACCOUNT_JSON&&process.env.ANDROID_PACKAGE_NAME),
+  playCaller:(()=>{try{return googleServiceAccountIdentity();}catch{return {error:"Google Play service-account identity unavailable"};}})(),
   cloud:!!(process.env.GOOGLE_SERVICE_ACCOUNT_JSON&&process.env.GOOGLE_CLOUD_PROJECT_ID),
   admob:!!((process.env.GOOGLE_ADMOB_REFRESH_TOKEN||process.env.GOOGLE_OAUTH_REFRESH_TOKEN)&&process.env.GOOGLE_OAUTH_CLIENT_ID&&process.env.GOOGLE_OAUTH_CLIENT_SECRET),
   adsense:!!((process.env.GOOGLE_ADSENSE_REFRESH_TOKEN||process.env.GOOGLE_OAUTH_REFRESH_TOKEN)&&process.env.GOOGLE_OAUTH_CLIENT_ID&&process.env.GOOGLE_OAUTH_CLIENT_SECRET),

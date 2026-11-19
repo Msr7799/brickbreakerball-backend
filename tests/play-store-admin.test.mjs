@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
+import {runInNewContext} from "node:vm";
+import ts from "typescript";
 
 const read=p=>readFileSync(new URL(p,import.meta.url),"utf8");
 
@@ -30,4 +32,33 @@ test("Image uploads and request history are protected in the admin UI",()=>{
  assert.match(page,/new FormData\(\)/);
  assert.match(page,/historyStatus/);
  assert.match(audit,/requestId:crypto\.randomUUID/);
+});
+
+test("Google Play credential identity and structured Google error reasons are diagnostic but secret-safe",()=>{
+ const google=read("../src/lib/google.ts");
+ const mcp=read("../app/api/mcp/route.ts");
+ assert.match(google,/function googleServiceAccountIdentity\(/);
+ assert.match(google,/client_email/);
+ assert.match(google,/function googleApiErrorMessage\(/);
+ assert.match(google,/error\?\.details/);
+ assert.match(google,/error\?\.errors/);
+ assert.match(google,/\[redacted\]/);
+ assert.match(mcp,/playCaller:/);
+ assert.doesNotMatch(mcp,/private_key/);
+});
+
+test("Google API permission errors expose structured reasons but redact bearer tokens",()=>{
+ const source=read("../src/lib/google.ts");
+ const functionSource=source.slice(source.indexOf("export function googleApiErrorMessage"),source.indexOf("export async function googleToken"));
+ const compiled=ts.transpileModule(functionSource,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
+ const context={exports:{}};
+ runInNewContext(compiled,context);
+ const format=context.exports.googleApiErrorMessage;
+ const error=format(403,{error:{status:"PERMISSION_DENIED",message:"The caller does not have permission",errors:[{reason:"forbidden"}],details:[{reason:"IAM_PERMISSION_DENIED",metadata:{permission:"androidpublisher.edits.validate",service:"androidpublisher.googleapis.com"}}]}},"Forbidden");
+ assert.match(error,/403 \(PERMISSION_DENIED\)/);
+ assert.match(error,/forbidden/);
+ assert.match(error,/IAM_PERMISSION_DENIED/);
+ assert.match(error,/androidpublisher\.edits\.validate/);
+ assert.doesNotMatch(format(403,{error:{message:"Bearer ya29.SUPERSECRET"}},"Denied"),/SUPERSECRET/);
+ assert.match(format(403,{error:{message:"Denied",details:{invalid:true}}},"Denied"),/Denied/);
 });

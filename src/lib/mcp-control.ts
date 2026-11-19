@@ -6,6 +6,7 @@ import {z} from "zod";
 import {searchTavily} from "./tavily";
 import {pubsubCreateTopic,pubsubCreatePullSubscription,pubsubUpdatePullAckDeadline,admobCreateAdUnit,adsenseListAlerts,adsenseListPolicyIssues,adsenseListPayments,adsenseListAdClients,adsenseCreateDisplayAdUnit} from "./monetization-admin";
 import {analyticsCredentialIdentity,crashlyticsListReports,crashlyticsGetReport,crashlyticsGetIssue,crashlyticsListEvents,analyticsReport,crashlyticsListNotes,crashlyticsUpdateIssue,crashlyticsCreateNote,crashlyticsDeleteNote,analyticsListKeyEvents,analyticsCreateKeyEvent,analyticsUpdateKeyEvent,analyticsDeleteKeyEvent} from "./game-insights";
+import {playLanguage,playEditId,playImageType,playListingFields,playDetailsFields,playBeginEdit,playListListings,playGetListing,playPatchListing,playGetDetails,playPatchDetails,playListImages,playDeleteImage,playUploadImage,playListTracks,playGetTrack,playValidateEdit,playCommitEdit,playReplyReview,playAccessDiagnostic} from "./play-admin";
 import type {Db} from "mongodb";
 
 const {db}=require("../../billing/lib/db.js") as {db:()=>Promise<Db>};
@@ -25,7 +26,7 @@ type ConnectionCheck={
  detail:string;
 };
 export const serviceIds:ServiceId[]=["firebase","crashlytics","analytics","cloud","play","admob","adsense","tavily","mongodb","vercel"];
-export const serviceLabels:Record<ServiceId,string>={mongodb:"MongoDB",vercel:"Vercel Runtime",firebase:"Firebase",crashlytics:"Firebase Crashlytics",analytics:"Google Analytics 4",cloud:"Google Cloud",play:"Google Play RTDN",admob:"AdMob",adsense:"AdSense",tavily:"Tavily Search"};
+export const serviceLabels:Record<ServiceId,string>={mongodb:"MongoDB",vercel:"Vercel Runtime",firebase:"Firebase",crashlytics:"Firebase Crashlytics",analytics:"Google Analytics 4",cloud:"Google Cloud",play:"Google Play Developer API",admob:"AdMob",adsense:"AdSense",tavily:"Tavily Search"};
 const packageName=()=>assertEnv("ANDROID_PACKAGE_NAME");
 const cloudId=()=>assertEnv("GOOGLE_CLOUD_PROJECT_ID");
 const playUrl=()=>`https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${encodeURIComponent(packageName())}`;
@@ -40,7 +41,7 @@ export const credentialsReady=(id:ServiceId):boolean=>{
   case "cloud":return has("GOOGLE_CLOUD_PROJECT_ID")&&has("GOOGLE_SERVICE_ACCOUNT_JSON");
   case "crashlytics":return (has("FIREBASE_SERVICE_ACCOUNT_JSON")||has("GOOGLE_SERVICE_ACCOUNT_JSON"))&&has("ANDROID_PACKAGE_NAME");
   case "analytics":return (has("FIREBASE_SERVICE_ACCOUNT_JSON")||has("GOOGLE_SERVICE_ACCOUNT_JSON"))&&has("ANDROID_PACKAGE_NAME");
-  case "play":return has("PUBSUB_PUSH_SERVICE_ACCOUNT")&&has("PUBSUB_AUDIENCE")&&has("GOOGLE_PLAY_PACKAGE_NAME");
+  case "play":return has("GOOGLE_SERVICE_ACCOUNT_JSON")&&has("ANDROID_PACKAGE_NAME");
   case "admob":return has("GOOGLE_OAUTH_CLIENT_ID")&&has("GOOGLE_OAUTH_CLIENT_SECRET")&&(has("GOOGLE_ADMOB_REFRESH_TOKEN")||has("GOOGLE_OAUTH_REFRESH_TOKEN"));
   case "adsense":return has("GOOGLE_OAUTH_CLIENT_ID")&&has("GOOGLE_OAUTH_CLIENT_SECRET")&&(has("GOOGLE_ADSENSE_REFRESH_TOKEN")||has("GOOGLE_OAUTH_REFRESH_TOKEN"));
  }
@@ -53,17 +54,17 @@ function humanError(err:unknown){
 export async function writeAudit(input:{source:"mcp"|"dashboard";action:string;service?:string;success:boolean;durationMs:number;detail?:string}){
  try{
   const database=await db();
-  await database.collection("mcp_audit").insertOne({at:new Date(),source:input.source,action:input.action,service:input.service||"gateway",success:input.success,durationMs:Math.round(input.durationMs),detail:(input.detail||"").slice(0,240)});
+  await database.collection("mcp_audit").insertOne({requestId:crypto.randomUUID(),at:new Date(),source:input.source,action:input.action,service:input.service||"gateway",status:input.success?"success":"error",success:input.success,durationMs:Math.round(input.durationMs),detail:humanError(new Error(input.detail||"Operation completed"))});
  }catch(e){console.warn("MCP audit unavailable",e instanceof Error?e.name:"unknown");}
 }
 /** Fail closed before Google mutations: a durable intent record is mandatory. */
 export async function recordMcpWriteIntent(action:string,subject:string,source:"mcp"|"dashboard"="mcp"){
  const service=toolsMeta.find(t=>t.id===action)?.service||"gateway";
- await (await db()).collection("mcp_audit").insertOne({at:new Date(),source,action,service,success:false,durationMs:0,detail:`Authorized write intent (pending): ${subject.slice(0,100)}`});
+ await (await db()).collection("mcp_audit").insertOne({requestId:crypto.randomUUID(),at:new Date(),source,action,service,status:"pending",success:null,durationMs:0,detail:`Authorized write intent (pending): ${subject.slice(0,100)}`});
 }
 export async function latestActivity(limit=30){
  const database=await db();
- return database.collection("mcp_audit").find({}, {projection:{_id:0,at:1,source:1,action:1,service:1,success:1,durationMs:1,detail:1}}).sort({at:-1}).limit(limit).toArray();
+ return database.collection("mcp_audit").find({}, {projection:{_id:0,requestId:1,status:1,at:1,source:1,action:1,service:1,success:1,durationMs:1,detail:1}}).sort({at:-1}).limit(Math.min(200,Math.max(1,limit))).toArray();
 }
 async function probe(id:ServiceId):Promise<string>{
  switch(id){
@@ -93,9 +94,8 @@ async function probe(id:ServiceId):Promise<string>{
    return `Project API accessible: ${resp.projectId||cloudId()}`;
   }
   case "play":{
-   const database=await db();const count=await database.collection("events").countDocuments({type:"test"});
-   if(!count)throw new Error("No Google Play test RTDN received yet. Send a test notification first.");
-   return `${count} Google Play test notification(s) recorded; real purchase verification not tested`;
+   const diagnostic=await playAccessDiagnostic();
+   return `Google Play API validated for ${diagnostic.packageName}; ${diagnostic.listingCount} locale(s), ${diagnostic.trackCount} release track(s)`;
   }
   case "admob":{
    const response=await googleGet("https://admob.googleapis.com/v1/accounts",await oauthToken("admob")) as {account?:unknown[]};
@@ -132,7 +132,7 @@ async function saveCheck(record:{service:ServiceId;status:ServiceState;at:Date;l
 export async function dashboardOverview(){
  const database=await db();
  const [checks,activity,events,successful,failed]=await Promise.all([
-  database.collection<ConnectionCheck>("mcp_checks").find({}).toArray(),latestActivity(80),database.collection("events").countDocuments({}),
+  database.collection<ConnectionCheck>("mcp_checks").find({}).toArray(),latestActivity(200),database.collection("events").countDocuments({}),
   database.collection("mcp_audit").countDocuments({success:true}),database.collection("mcp_audit").countDocuments({success:false})
  ]);
  // كل _id نص يمثل ServiceId، لذلك لا نحتاج تحويل ObjectId غير آمن.
@@ -149,12 +149,28 @@ export async function dashboardOverview(){
 }
 const d=z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const account=z.string().regex(/^accounts\/pub-\d{10,20}$/);
+const playObject=(schema:typeof playListingFields|typeof playDetailsFields)=>z.preprocess(value=>typeof value==="string"?JSON.parse(value):value,schema);
 const toolSchemas={
  gateway_status:z.object({}),firebase_read:z.object({path:z.string().min(1).max(200).default("/mcp"),maxChildren:z.coerce.number().int().min(1).max(100).default(20)}),
  tavily_search:z.object({query:z.string().min(3).max(500)}),
  play_list_reviews:z.object({maxResults:z.coerce.number().int().min(1).max(100).default(20)}),
  play_list_one_time_products:z.object({pageSize:z.coerce.number().int().min(1).max(100).default(50)}),
  play_list_subscriptions:z.object({pageSize:z.coerce.number().int().min(1).max(100).default(50)}),
+ play_access_diagnostic:z.object({}),
+ play_begin_edit:z.object({confirm:z.literal("CONFIRM")}),
+ play_list_store_listings:z.object({editId:playEditId}),
+ play_get_store_listing:z.object({editId:playEditId,language:playLanguage}),
+ play_get_app_details:z.object({editId:playEditId}),
+ play_list_store_images:z.object({editId:playEditId,language:playLanguage,imageType:playImageType}),
+ play_list_tracks:z.object({editId:playEditId}),
+ play_get_track:z.object({editId:playEditId,track:z.string().regex(/^[A-Za-z0-9_-]{1,80}$/)}),
+ play_update_store_listing:z.object({editId:playEditId,language:playLanguage,fields:playObject(playListingFields),confirm:z.literal("CONFIRM")}),
+ play_update_app_details:z.object({editId:playEditId,fields:playObject(playDetailsFields),confirm:z.literal("CONFIRM")}),
+ play_upload_store_image:z.object({editId:playEditId,language:playLanguage,imageType:playImageType,mimeType:z.enum(["image/png","image/jpeg"]),imageBase64:z.string().min(12).max(4100000),confirm:z.literal("CONFIRM")}),
+ play_delete_store_image:z.object({editId:playEditId,language:playLanguage,imageType:playImageType,imageId:z.string().min(1).max(300),confirm:z.literal("CONFIRM")}),
+ play_validate_edit:z.object({editId:playEditId}),
+ play_commit_edit:z.object({editId:playEditId,confirm:z.literal("CONFIRM")}),
+ play_reply_review:z.object({reviewId:z.string().min(1).max(300),replyText:z.string().trim().min(1).max(350),confirm:z.literal("CONFIRM")}),
  cloud_get_project:z.object({}),cloud_list_pubsub_topics:z.object({pageSize:z.coerce.number().int().min(1).max(100).default(30)}),cloud_list_pubsub_subscriptions:z.object({pageSize:z.coerce.number().int().min(1).max(100).default(30)}),
  pubsub_create_topic:z.object({topicId:z.string().regex(/^forgepulse-[a-zA-Z0-9-]{1,64}$/),confirm:z.literal("CONFIRM")}),
  pubsub_create_pull_subscription:z.object({subscriptionId:z.string().regex(/^forgepulse-[a-zA-Z0-9-]{1,64}$/),topicId:z.string().regex(/^forgepulse-[a-zA-Z0-9-]{1,64}$/),ackDeadlineSeconds:z.coerce.number().int().min(10).max(600).default(20),confirm:z.literal("CONFIRM")}),
@@ -204,6 +220,21 @@ export const toolsMeta:{id:ToolId;service:ServiceId;title:string;description:str
  {id:"play_list_reviews",service:"play",title:"مراجعات Google Play",description:"استعراض تقييمات اللعبة",args:[]},
  {id:"play_list_one_time_products",service:"play",title:"منتجات الجواهر",description:"استعراض منتجات الشراء لمرة واحدة",args:[]},
  {id:"play_list_subscriptions",service:"play",title:"الاشتراكات",description:"استعراض اشتراكات اللعبة",args:[]},
+ {id:"play_access_diagnostic",service:"play",title:"تشخيص Google Play API",description:"اختبار دخول Google وتفاصيل المتجر والمسارات عبر مسودة مؤقتة تُحذف فوراً؛ يعرض سبب الخطأ من دون تعديل منشور",args:[]},
+ {id:"play_begin_edit",service:"play",mode:"write",title:"فتح مسودة متجر",description:"إنشاء مسودة مؤقتة وإرجاع editId؛ لا يغيّر بيانات المتجر المباشرة",args:[{key:"confirm",label:"اكتب CONFIRM"}]},
+ {id:"play_list_store_listings",service:"play",title:"كل لغات بطاقة المتجر",description:"قراءة الاسم والوصف والفيديو لكل اللغات المضافة داخل المسودة",args:[{key:"editId",label:"معرّف المسودة editId"}]},
+ {id:"play_get_store_listing",service:"play",title:"تفاصيل بطاقة لغة",description:"قراءة نصوص بطاقة المتجر للغة واحدة من المسودة",args:[{key:"editId",label:"معرّف المسودة"},{key:"language",label:"اللغة",hint:"en-US"}]},
+ {id:"play_get_app_details",service:"play",title:"معلومات الدعم العام",description:"قراءة لغة التطبيق الرئيسية وموقع الدعم والإيميل ورقم التواصل",args:[{key:"editId",label:"معرّف المسودة"}]},
+ {id:"play_list_store_images",service:"play",title:"صور بطاقة المتجر",description:"عرض معرفات الصور وروابط معاينتها حسب اللغة والنوع قبل إجراء أي تغيير",args:[{key:"editId",label:"معرّف المسودة"},{key:"language",label:"اللغة",hint:"en-US"},{key:"imageType",label:"نوع الصورة",hint:"phoneScreenshots"}]},
+ {id:"play_list_tracks",service:"play",title:"مسارات وإصدارات Play",description:"قراءة معلومات الإنتاج والاختبار من دون نشر إصدار",args:[{key:"editId",label:"معرّف المسودة"}]},
+ {id:"play_get_track",service:"play",title:"تفاصيل مسار الإصدار",description:"فحص مسار مثل production أو beta من دون تعديله",args:[{key:"editId",label:"معرّف المسودة"},{key:"track",label:"اسم المسار",hint:"production"}]},
+ {id:"play_update_store_listing",service:"play",mode:"write",title:"تعديل وصف وعنوان المتجر",description:"تعديل العنوان/الوصف القصير/الكامل أو الفيديو داخل المسودة فقط؛ الحقول بصيغة JSON ولا تُنشر إلا بعد الفحص والاعتماد",args:[{key:"editId",label:"معرّف المسودة"},{key:"language",label:"اللغة",hint:"en-US"},{key:"fields",label:"الحقول JSON",hint:'{"shortDescription":"Aim, launch and break!"}'},{key:"confirm",label:"اكتب CONFIRM"}]},
+ {id:"play_update_app_details",service:"play",mode:"write",title:"تعديل معلومات التواصل",description:"تعديل موقع وإيميل ورقم دعم التطبيق واللغة الرئيسية داخل مسودة فقط",args:[{key:"editId",label:"معرّف المسودة"},{key:"fields",label:"الحقول JSON",hint:'{"contactEmail":"support@example.com"}'},{key:"confirm",label:"اكتب CONFIRM"}]},
+ {id:"play_upload_store_image",service:"play",mode:"write",title:"رفع صورة للمتجر",description:"رفع PNG أو JPEG حتى 4MB من الجهاز إلى مسودة المتجر؛ لا تُنشر الصورة قبل الاعتماد",args:[{key:"editId",label:"معرّف المسودة"},{key:"language",label:"اللغة",hint:"en-US"},{key:"imageType",label:"نوع الصورة",hint:"phoneScreenshots"},{key:"imageFile",label:"اختر صورة من جهازك"},{key:"confirm",label:"اكتب CONFIRM"}]},
+ {id:"play_delete_store_image",service:"play",mode:"write",title:"إزالة صورة من المسودة",description:"حذف صورة معينة داخل المسودة فقط؛ لن يُطبّق الحذف حتى تَعتَمد المسودة",args:[{key:"editId",label:"معرّف المسودة"},{key:"language",label:"اللغة",hint:"en-US"},{key:"imageType",label:"نوع الصورة",hint:"phoneScreenshots"},{key:"imageId",label:"معرّف الصورة"},{key:"confirm",label:"اكتب CONFIRM"}]},
+ {id:"play_validate_edit",service:"play",title:"فحص مسودة المتجر",description:"طلب تحقق رسمي من Google للتعديلات قبل اعتمادها؛ لا ينشر أي شيء",args:[{key:"editId",label:"معرّف المسودة"}]},
+ {id:"play_commit_edit",service:"play",mode:"write",title:"اعتماد مسودة Google Play",description:"خطوة النشر النهائية لكل تغييرات المسودة بعد فحصها؛ قد تُرسل للمراجعة/النشر، ولا تلغي مراجعة حالية",args:[{key:"editId",label:"معرّف المسودة"},{key:"confirm",label:"اكتب CONFIRM"}]},
+ {id:"play_reply_review",service:"play",mode:"write",title:"الرد على تقييم",description:"نشر رد عام على مراجعة لاعب واحدة أو تحديث الرد السابق، ويظهر في متجر Google Play",args:[{key:"reviewId",label:"معرّف المراجعة"},{key:"replyText",label:"نص الرد"},{key:"confirm",label:"اكتب CONFIRM"}]},
  {id:"cloud_get_project",service:"cloud",title:"معلومات مشروع Cloud",description:"التحقق من تفاصيل مشروع Google Cloud",args:[]},
  {id:"cloud_list_pubsub_topics",service:"cloud",title:"مواضيع Pub/Sub",description:"عرض مواضيع الإشعارات",args:[]},
  {id:"cloud_list_pubsub_subscriptions",service:"cloud",title:"اشتراكات Pub/Sub",description:"عرض اشتراكات إشعارات المشتريات",args:[]},
@@ -234,7 +265,8 @@ export async function runReadTool(name:string,args:unknown,source:"dashboard"|"m
    if(process.env.MCP_WRITE_ENABLED!=="true")throw new Error("MCP write operations are disabled by MCP_WRITE_ENABLED");
    // This entrypoint is restricted to an authenticated, same-origin admin dashboard.
    if(p.confirm!=="CONFIRM")throw new Error("Explicit CONFIRM is required");
-   await recordMcpWriteIntent(name,JSON.stringify(Object.fromEntries(Object.entries(p).filter(([key])=>!["body","confirm"].includes(key)))).slice(0,120),source);
+   // Audit only narrow resource identifiers, never text bodies, contacts, access tokens or image bytes.
+   await recordMcpWriteIntent(name,JSON.stringify(Object.fromEntries(Object.entries(p).filter(([key])=>["editId","language","imageType","imageId","reviewId","issueId","state","topicId","subscriptionId"].includes(key)))).slice(0,120),source);
   }
   let output:unknown;
   switch(name){
@@ -259,6 +291,21 @@ export async function runReadTool(name:string,args:unknown,source:"dashboard"|"m
    case "play_list_reviews":output=await googleGet(`${playUrl()}/reviews`,await googleToken("play"),{maxResults:p.maxResults});break;
    case "play_list_one_time_products":output=await googleGet(`${playUrl()}/oneTimeProducts`,await googleToken("play"),{pageSize:p.pageSize});break;
    case "play_list_subscriptions":output=await googleGet(`${playUrl()}/subscriptions`,await googleToken("play"),{pageSize:p.pageSize});break;
+   case "play_access_diagnostic":output=await playAccessDiagnostic();break;
+   case "play_begin_edit":output=await playBeginEdit();break;
+   case "play_list_store_listings":output=await playListListings(p.editId);break;
+   case "play_get_store_listing":output=await playGetListing(p.editId,p.language);break;
+   case "play_get_app_details":output=await playGetDetails(p.editId);break;
+   case "play_list_store_images":output=await playListImages(p.editId,p.language,p.imageType);break;
+   case "play_list_tracks":output=await playListTracks(p.editId);break;
+   case "play_get_track":output=await playGetTrack(p.editId,p.track);break;
+   case "play_update_store_listing":output=await playPatchListing(p.editId,p.language,p.fields);break;
+   case "play_update_app_details":output=await playPatchDetails(p.editId,p.fields);break;
+   case "play_upload_store_image":output=await playUploadImage(p.editId,p.language,p.imageType,Buffer.from(p.imageBase64,"base64"),p.mimeType);break;
+   case "play_delete_store_image":output=await playDeleteImage(p.editId,p.language,p.imageType,p.imageId);break;
+   case "play_validate_edit":output=await playValidateEdit(p.editId);break;
+   case "play_commit_edit":output=await playCommitEdit(p.editId);break;
+   case "play_reply_review":output=await playReplyReview(p.reviewId,p.replyText);break;
    case "cloud_get_project":output=await googleGet(`https://cloudresourcemanager.googleapis.com/v3/projects/${encodeURIComponent(cloudId())}`,await googleToken("cloud"));break;
    case "cloud_list_pubsub_topics":output=await googleGet(`${projectUrl()}/topics`,await googleToken("cloud"),{pageSize:p.pageSize});break;
    case "cloud_list_pubsub_subscriptions":output=await googleGet(`${projectUrl()}/subscriptions`,await googleToken("cloud"),{pageSize:p.pageSize});break;
@@ -279,7 +326,7 @@ export async function runReadTool(name:string,args:unknown,source:"dashboard"|"m
    case "adsense_create_display_ad_unit":output=await adsenseCreateDisplayAdUnit(p.account,p.adclient,p.displayName);break;
    case "adsense_report":{const u=new URL(`https://adsense.googleapis.com/v2/${validateResource("adsense",p.account)}/reports:generate`);u.searchParams.set("dateRange",p.dateRange);["ESTIMATED_EARNINGS","CLICKS","IMPRESSIONS"].forEach(m=>u.searchParams.append("metrics",m));u.searchParams.append("dimensions","DATE");output=await googleGet(u.toString(),await oauthToken("adsense"));break;}
   }
-  await writeAudit({source,action:name,service:toolsMeta.find(t=>t.id===name)?.service,success:true,durationMs:Date.now()-started,detail:isWrite?"Admin-approved write completed":"Read-only operation completed"});
+  await writeAudit({source,action:name,service:toolsMeta.find(t=>t.id===name)?.service,success:true,durationMs:Date.now()-started,detail:isWrite?`Confirmed write: ${[p.editId,p.language,p.imageType,p.reviewId].filter(Boolean).join("/").slice(0,100)}`:"Read-only operation completed"});
   return output??{};
  }catch(err){await writeAudit({source,action:name,service:toolsMeta.find(t=>t.id===name)?.service,success:false,durationMs:Date.now()-started,detail:humanError(err)});throw err;}
 }

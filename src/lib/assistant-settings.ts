@@ -24,7 +24,9 @@ const initialAdminToolIds=[
 ];
 const adminToolIds=initialAdminToolIds;
 const beforeMonetizationToolIds=[...preWriteToolIds,...initialAdminToolIds];
-const monetizationToolIds=defaults.toolIds.filter(id=>!beforeMonetizationToolIds.includes(id));
+const playStoreToolIds=["play_access_diagnostic","play_begin_edit","play_list_store_listings","play_get_store_listing","play_get_app_details","play_list_store_images","play_list_tracks","play_get_track","play_update_store_listing","play_update_app_details","play_upload_store_image","play_delete_store_image","play_validate_edit","play_commit_edit","play_reply_review"];
+const monetizationToolIds=defaults.toolIds.filter(id=>!beforeMonetizationToolIds.includes(id)&&!playStoreToolIds.includes(id));
+const previousCatalogIds=defaults.toolIds.filter(id=>!playStoreToolIds.includes(id));
 export async function getAssistantSettings():Promise<AssistantSettings>{
  const collection=(await db()).collection<AssistantSettings & {_id:string;schemaVersion?:number}>("assistant_settings");
  let saved=await collection.findOne({_id:"main"});
@@ -48,7 +50,7 @@ export async function getAssistantSettings():Promise<AssistantSettings>{
  if(untouchedOriginalPreset){
   await collection.updateOne({_id:"main",toolIds:{$size:originalToolIds.length},
    ...(saved?.schemaVersion===undefined?{schemaVersion:{$exists:false}}:{schemaVersion:saved?.schemaVersion})},
-   {$addToSet:{toolIds:{$each:defaults.toolIds}},$set:{schemaVersion:4}});
+   {$addToSet:{toolIds:{$each:defaults.toolIds}},$set:{schemaVersion:5}});
   saved=await collection.findOne({_id:"main"});
  }
  // Only upgrade an untouched all-tools preset. Keep custom per-tool permissions unchanged.
@@ -66,6 +68,16 @@ export async function getAssistantSettings():Promise<AssistantSettings>{
  if(fullAdminPreset){
   await collection.updateOne({_id:"main",schemaVersion:3,toolIds:{$size:beforeMonetizationToolIds.length}},
    {$addToSet:{toolIds:{$each:monetizationToolIds}},$set:{schemaVersion:4}});
+  saved=await collection.findOne({_id:"main"});
+ }
+ // Bring the new Play API tools into an untouched, full v4 installation.
+ // Custom allowlists (even a single tool intentionally disabled) are never expanded.
+ const v4Ids=saved?.toolIds;
+ const fullV4Preset=!!saved&&saved.schemaVersion===4&&!!v4Ids&&
+  v4Ids.length===previousCatalogIds.length&&previousCatalogIds.every(id=>v4Ids.includes(id));
+ if(fullV4Preset){
+  await collection.updateOne({_id:"main",schemaVersion:4,toolIds:{$size:previousCatalogIds.length}},
+   {$addToSet:{toolIds:{$each:playStoreToolIds}},$set:{schemaVersion:5}});
   saved=await collection.findOne({_id:"main"});
  }
  return {...defaults,...saved,toolIds:saved?.toolIds??defaults.toolIds};

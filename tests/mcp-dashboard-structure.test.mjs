@@ -19,7 +19,7 @@ test('new console enforces session and same-origin for actions',()=>{
 });
 test('original MCP tools and Tavily search remain registered and auditable',()=>{
  const mcp=read('app/api/mcp/route.ts');
- assert.equal((mcp.match(/server\.registerTool\(/g)||[]).length,40);
+ assert.equal((mcp.match(/server\.registerTool\(/g)||[]).length,55);
  assert.match(mcp,/writeContext\.getStore\(\)/);
  assert.match(mcp,/recordMcpWriteIntent/);
  assert.match(mcp,/server\.registerTool\("tavily_search"/);

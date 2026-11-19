@@ -1,5 +1,5 @@
 /** Google Play Developer API: scoped, reviewable changes to the configured game only. */
-import {googleGet,googleRequest,googleToken} from "./google";
+import {googleGet,googleRequest,googleToken,googleServiceAccountIdentity} from "./google";
 import {assertEnv} from "./security";
 import {z} from "zod";
 import type {Db} from "mongodb";
@@ -126,8 +126,31 @@ export async function playReplyReview(reviewId:string,replyText:string){
  return googleRequest(`${root()}/reviews/${encodeURIComponent(id)}:reply`,await googleToken("play"),"POST",{replyText:body});
 }
 
+/** Read only the logged-in Play service account's grants; never disclose other account users. */
+export async function playCallerPermissions(){
+ const developerId=process.env.GOOGLE_PLAY_DEVELOPER_ID?.trim();
+ if(!developerId||!/^\d{12,22}$/.test(developerId))return {ok:false,reason:"GOOGLE_PLAY_DEVELOPER_ID is not configured"};
+ const identity=googleServiceAccountIdentity();
+ const response=await googleGet(`https://androidpublisher.googleapis.com/androidpublisher/v3/developers/${developerId}/users`,await googleToken("play"),{pageSize:100}) as {
+  users?:Array<{email?:string;accessState?:string;partial?:boolean;developerAccountPermissions?:string[];grants?:Array<{name?:string;appLevelPermissions?:string[]}>}>;nextPageToken?:string;
+ };
+ const caller=response.users?.find(user=>user.email?.toLowerCase()===identity.clientEmail.toLowerCase());
+ if(!caller)return {ok:false,reason:"Current Play service account not found on first developer-account users page",callerEmail:identity.clientEmail,morePages:!!response.nextPageToken};
+ const permissions=caller.developerAccountPermissions||[];
+ const packageName=assertEnv("ANDROID_PACKAGE_NAME");
+ const grant=caller.grants?.find(value=>value.name?.endsWith(`/grants/${packageName}`));
+ return {ok:true,callerEmail:identity.clientEmail,accessState:caller.accessState||"unknown",partial:!!caller.partial,
+  globalAdmin:permissions.includes("CAN_MANAGE_PERMISSIONS_GLOBAL"),
+  globalStorePresence:permissions.includes("CAN_MANAGE_PUBLIC_LISTING_GLOBAL"),
+  globalPermissions:permissions,
+  appPermissions:grant?.appLevelPermissions||[],packageName,
+  note:"Read-only Play Console permission snapshot for the configured service account. Other users are never returned."};
+}
+
 /** Diagnostic creates and deletes an unpublished, empty edit; never writes a live listing. */
 export async function playAccessDiagnostic(){
+ const pending=await (await sessions()).findOne({packageName:assertEnv("ANDROID_PACKAGE_NAME"),status:"open",expiresAt:{$gt:new Date()}},{projection:{_id:1}});
+ if(pending)throw new Error("An active Google Play edit is being preserved. Do not run this diagnostic until it expires or is committed; use play_validate_edit on the existing edit.");
  const started=Date.now();const token=await googleToken("play");
  const response=await googleRequest(`${root()}/edits`,token,"POST",{}) as {id?:string};
  if(!response.id)throw new Error("Google Play did not return a test edit ID");
